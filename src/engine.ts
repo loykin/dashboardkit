@@ -1,16 +1,18 @@
 import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
 import { buildVariableDAG, CircularDependencyError } from './dag'
-import { parseRefs, interpolate } from './parser'
-import { buildBuiltinMap, calculateInterval } from './builtins'
+import { parseRefs } from './parser'
+import { buildBuiltinMap } from './builtins'
 import type { BuiltinVariable, BuiltinContext } from './builtins'
 import type {
   DashboardConfig,
+  DashboardInput,
   VariableState,
   PanelState,
   QueryResult,
   EngineEvent,
 } from './types'
+import { DashboardConfigSchema } from './types'
 import type {
   DatasourcePluginDef,
   PanelPluginDef,
@@ -199,7 +201,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
-  function resolveOptions(raw: Record<string, unknown>, def: VariableTypePluginDef): Record<string, unknown> {
+  function resolveOptions(raw: Record<string, unknown>, _def: VariableTypePluginDef): Record<string, unknown> {
     return raw
   }
 
@@ -316,11 +318,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   const api: CoreEngineAPI = {
-    load(config: DashboardConfig) {
+    load(config: DashboardInput) {
+      const parsed = DashboardConfigSchema.parse(config)
       // DAG topological sort — throws immediately on failure
       try {
         sortedVarNames = buildVariableDAG(
-          config.variables.map((v) => ({
+          parsed.variables.map((v) => ({
             name: v.name,
             ...(v.query !== undefined ? { query: v.query } : {}),
           })),
@@ -332,7 +335,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       // Initial variable state
       const initVars: Record<string, VariableState> = {}
-      for (const v of config.variables) {
+      for (const v of parsed.variables) {
         const defaultVal = v.defaultValue ?? (v.multi ? [] : '')
         initVars[v.name] = {
           name: v.name,
@@ -346,7 +349,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       // Initial panel state
       const initPanels: Record<string, PanelState> = {}
-      for (const p of config.panels) {
+      for (const p of parsed.panels) {
         initPanels[p.id] = {
           id: p.id,
           data: null,
@@ -360,10 +363,10 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
 
       store.setState({
-        config,
+        config: parsed,
         variables: initVars,
         panels: initPanels,
-        timeRange: config.timeRange ?? undefined,
+        timeRange: parsed.timeRange ?? undefined,
       })
 
       cache.clear()

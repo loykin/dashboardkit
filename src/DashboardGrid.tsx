@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import GridLayout, { type LayoutItem } from 'react-grid-layout'
 import type { CoreEngineAPI } from './define'
-import type { DashboardConfig } from './types'
+import type { DashboardInput } from './types'
 import { useDashboard, usePanel } from './hooks'
 // CSS must be imported by the consumer (e.g. playground):
 // import 'react-grid-layout/css/styles.css'
@@ -21,7 +21,7 @@ export interface PanelRenderProps {
 
 export interface DashboardGridProps {
   engine: CoreEngineAPI
-  config: DashboardConfig
+  config: DashboardInput
   /** Grid container width in px. Auto-measured from parent if omitted. */
   width?: number
   /** Grid edit mode (enables drag and resize) */
@@ -87,7 +87,7 @@ export function DashboardGrid({
     <div ref={containerRef} className={className} style={style}>
       <GridLayout
         layout={layout}
-        gridConfig={{ cols: config.layout.cols, rowHeight: config.layout.rowHeight, margin: [8, 8] as const }}
+        gridConfig={{ cols: config.layout?.cols ?? 24, rowHeight: config.layout?.rowHeight ?? 30, margin: [8, 8] as const }}
         width={containerWidth}
         dragConfig={{ enabled: editable }}
         resizeConfig={{ enabled: editable }}

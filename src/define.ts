@@ -90,8 +90,8 @@ export interface CreateDashboardEngineOptions {
 // ─── CoreEngineAPI ─────────────────────────────────────────────────────────────
 
 export interface CoreEngineAPI {
-  // Load config
-  load(config: import('./types').DashboardConfig): void
+  // Load config (accepts input type — defaults are filled in automatically)
+  load(config: import('./types').DashboardInput): void
   getConfig(): import('./types').DashboardConfig | null
 
   // Variables

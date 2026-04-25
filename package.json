@@ -17,12 +17,12 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc --noEmit && tsup",
+    "build": "tsc --noEmit && eslint src --ext .ts,.tsx && tsup",
     "build:js": "tsup",
     "dev": "concurrently \"tsup --watch\" \"pnpm --filter playground dev\"",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix"
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix"
   },
   "dependencies": {
     "react": "^19.2.5",

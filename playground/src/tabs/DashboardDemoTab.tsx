@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React from 'react'
 import {
   createDashboardEngine,
   defineDatasource,
@@ -8,7 +8,7 @@ import {
   useDashboard,
   useVariable,
 } from '@dashboard-engine/core'
-import type { DashboardConfig, QueryResult, PanelRenderProps } from '@dashboard-engine/core'
+import type { DashboardInput, QueryResult, PanelRenderProps, PanelPluginDef } from '@dashboard-engine/core'
 
 // ─── Mock Datasource ───────────────────────────────────────────────────────────
 // In production, call the backend with fetch(). Here we return in-memory data.
@@ -151,13 +151,13 @@ const statPanel = definePanel({
 
 const engine = createDashboardEngine({
   datasources: [mockDs],
-  panels: [tablePanel, statPanel],
+  panels: [tablePanel, statPanel] as PanelPluginDef[],
   variableTypes: [queryVarType],
 })
 
 // ─── Dashboard Config ─────────────────────────────────────────────────────────
 
-const config: DashboardConfig = {
+const config: DashboardInput = {
   schemaVersion: 1,
   id: 'sales-demo',
   title: 'Sales Demo Dashboard',
@@ -191,7 +191,7 @@ const config: DashboardConfig = {
       type: 'stat',
       title: 'Total Sales — $country',
       gridPos: { x: 0, y: 0, w: 8, h: 3 },
-      targets: [{ refId: 'A', datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country'" }],
+      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country'" }],
       options: {},
     },
     {
@@ -199,7 +199,7 @@ const config: DashboardConfig = {
       type: 'stat',
       title: '$city Sales',
       gridPos: { x: 8, y: 0, w: 8, h: 3 },
-      targets: [{ refId: 'A', datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
     {
@@ -207,7 +207,7 @@ const config: DashboardConfig = {
       type: 'table',
       title: 'Sales Table',
       gridPos: { x: 0, y: 3, w: 24, h: 7 },
-      targets: [{ refId: 'A', datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
   ],
@@ -221,14 +221,14 @@ function PanelShell({ panelId, panelType, data, loading, error, ref }: PanelRend
   const { variables } = useDashboard(engine, config)
 
   // Substitute variables in title
-  const title = pcfg.title.replace(/\$(\w+)/g, (_, name) => {
+  const title = (pcfg.title ?? '').replace(/\$(\w+)/g, (_, name) => {
     const v = variables[name]?.value
     return Array.isArray(v) ? v.join(', ') : (v as string) ?? `$${name}`
   })
 
   return (
     <div
-      ref={ref as React.RefObject<HTMLDivElement>}
+      ref={ref as React.Ref<HTMLDivElement>}
       className="h-full flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
     >
       {/* Panel header */}

@@ -194,7 +194,10 @@ export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
 export type PanelConfig = z.infer<typeof PanelConfigSchema>
+// Output type (after parsing): all defaults filled in — used internally by the engine
 export type DashboardConfig = z.infer<typeof DashboardConfigSchema>
+// Input type (before parsing): fields with defaults are optional — use this when writing a config literal
+export type DashboardInput = z.input<typeof DashboardConfigSchema>
 
 // ─── Query Execution Options ─────────────────────────────────────────────────
 // [Library / Plugin boundary]

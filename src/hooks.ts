@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand/vanilla'
 import type { CoreEngineAPI } from './define'
-import type { DashboardConfig, VariableState, PanelState, EngineEvent } from './types'
+import type { DashboardConfig, DashboardInput, EngineEvent, PanelState, VariableState } from './types'
 
 // ─── Internal Store Access Helper ───────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ export interface UseDashboardResult {
   refreshAll: () => Promise<void>
 }
 
-export function useDashboard(engine: CoreEngineAPI, config: DashboardConfig): UseDashboardResult {
+export function useDashboard(engine: CoreEngineAPI, config: DashboardInput): UseDashboardResult {
   const configLoadedRef = useRef(false)
 
   // Load only on first render
@@ -48,8 +48,8 @@ export function useDashboard(engine: CoreEngineAPI, config: DashboardConfig): Us
     // Sync with latest state on mount
     setState(store.getState())
     // Subscribe to Zustand store
-    const unsub = store.subscribe((s) => setState(s))
-    return unsub
+
+    return store.subscribe((s) => setState(s))
   }, [store])
 
   const setVariable = useCallback(
@@ -109,11 +109,11 @@ export function useVariable(engine: CoreEngineAPI, name: string): UseVariableRes
         error: null,
       },
     )
-    const unsub = store.subscribe((s) => {
+
+    return store.subscribe((s) => {
       const next = s.variables[name]
       if (next) setVarState(next)
     })
-    return unsub
   }, [store, name])
 
   const setValue = useCallback(
@@ -175,11 +175,11 @@ export function usePanel<TData = unknown>(
         active: true,
       },
     )
-    const unsub = store.subscribe((s) => {
+
+    return store.subscribe((s) => {
       const next = s.panels[panelId]
       if (next) setPanelState(next)
     })
-    return unsub
   }, [store, panelId])
 
   // IntersectionObserver — toggle active state on viewport enter/exit
