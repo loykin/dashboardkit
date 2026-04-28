@@ -16,8 +16,10 @@ import type {
   AuthorizationRequest,
   PermissionAction,
   PermissionRule,
+  DashboardStateSnapshot,
 } from './types'
 import { DashboardConfigSchema } from './types'
+import { createMemoryDashboardStateStore } from './state'
 import type {
   DatasourcePluginDef,
   PanelPluginDef,
@@ -51,6 +53,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     datasources: dsDefs,
     variableTypes: vtDefs,
     builtinVariables = [],
+    stateStore = createMemoryDashboardStateStore(),
     authContext = {},
     authorize: customAuthorize,
   } =
@@ -79,11 +82,13 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   // Topologically sorted variable execution order
   let sortedVarNames: string[] = []
+  let lastDashboardSnapshot: DashboardStateSnapshot = stateStore.getSnapshot()
+  let suppressDashboardSnapshotEvents = false
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   function getBuiltinCtx(): BuiltinContext {
-    const tr = store.getState().timeRange ?? { from: new Date().toISOString(), to: new Date().toISOString() }
+    const tr = stateStore.getSnapshot().timeRange ?? { from: new Date().toISOString(), to: new Date().toISOString() }
     const cfg = store.getState().config
     return {
       timeRange: tr,
@@ -96,12 +101,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   function buildCtxVariables(): Record<string, string | string[]> {
-    const vars = store.getState().variables
-    const result: Record<string, string | string[]> = {}
-    for (const [k, v] of Object.entries(vars)) {
-      result[k] = v.value
-    }
-    return result
+    return { ...stateStore.getSnapshot().variables }
   }
 
   function cacheKey(dsUid: string, targetJson: string, tr?: { from: string; to: string }): string {
@@ -170,6 +170,107 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // target.datasource is a known field of TargetSchema so typed access is safe
   function resolveTargetDsUid(target: import('./types').Target, panelDsUid?: string): string | undefined {
     return target.datasource?.uid ?? panelDsUid
+  }
+
+  function valuesEqual(a: string | string[] | undefined, b: string | string[] | undefined): boolean {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i])
+    }
+    return a === b
+  }
+
+  function snapshotVarValue(snapshot: DashboardStateSnapshot, name: string): string | string[] | undefined {
+    return snapshot.variables[name]
+  }
+
+  function defaultVariableValue(v: import('./types').VariableConfig): string | string[] {
+    return v.defaultValue ?? (v.multi ? [] : '')
+  }
+
+  function buildDefaultStatePatch(cfg: DashboardConfig): import('./types').DashboardStatePatch {
+    const snapshot = stateStore.getSnapshot()
+    const variables: Record<string, string | string[] | undefined> = {}
+    for (const v of cfg.variables) {
+      if (snapshot.variables[v.name] === undefined) {
+        variables[v.name] = defaultVariableValue(v)
+      }
+    }
+
+    return {
+      ...(Object.keys(variables).length > 0 ? { variables } : {}),
+      ...(snapshot.timeRange === undefined && cfg.timeRange !== undefined ? { timeRange: cfg.timeRange } : {}),
+      ...(snapshot.refresh === undefined ? { refresh: cfg.refresh } : {}),
+    }
+  }
+
+  function mirrorDashboardSnapshot(snapshot: DashboardStateSnapshot) {
+    store.setState((s) => {
+      const cfg = s.config
+      const variables = { ...s.variables }
+      for (const [name, state] of Object.entries(variables)) {
+        const vcfg = cfg?.variables.find((v) => v.name === name)
+        variables[name] = {
+          ...state,
+          value: snapshot.variables[name] ?? (vcfg ? defaultVariableValue(vcfg) : state.value),
+        }
+      }
+      return {
+        variables,
+        timeRange: snapshot.timeRange,
+      }
+    })
+  }
+
+  function changedVariableNames(
+    prev: DashboardStateSnapshot,
+    next: DashboardStateSnapshot,
+  ): string[] {
+    const names = new Set([...Object.keys(prev.variables), ...Object.keys(next.variables)])
+    return [...names].filter((name) => !valuesEqual(prev.variables[name], next.variables[name]))
+  }
+
+  async function handleDashboardSnapshotChange(snapshot: DashboardStateSnapshot): Promise<void> {
+    const cfg = store.getState().config
+    const prev = lastDashboardSnapshot
+    lastDashboardSnapshot = snapshot
+    mirrorDashboardSnapshot(snapshot)
+    if (!cfg) return
+
+    const changedVars = changedVariableNames(prev, snapshot)
+    const timeChanged =
+      prev.timeRange?.from !== snapshot.timeRange?.from ||
+      prev.timeRange?.to !== snapshot.timeRange?.to
+
+    for (const name of changedVars) {
+      const value = snapshot.variables[name]
+      if (value !== undefined) emit({ type: 'variable-changed', name, value })
+    }
+
+    if (timeChanged && snapshot.timeRange) {
+      emit({ type: 'time-range-changed', range: snapshot.timeRange })
+      cache.clear()
+    }
+
+    if (changedVars.length > 0) {
+      const downstream = new Set<string>()
+      for (const changed of changedVars) {
+        const idx = sortedVarNames.indexOf(changed)
+        if (idx === -1) continue
+        for (const name of sortedVarNames.slice(idx + 1)) {
+          const vcfg = cfg.variables.find((v) => v.name === name)
+          if (vcfg?.query && parseRefs(vcfg.query).refs.includes(changed)) downstream.add(name)
+        }
+      }
+      for (const name of downstream) await resolveOneVariable(name)
+
+      const affected = [...new Set(changedVars.flatMap((name) => panelsReferencingVar(name)))]
+      invalidatePanelCache(affected)
+      await Promise.all(affected.map(executePanel))
+    }
+
+    if (timeChanged) {
+      await api.refreshAll()
+    }
   }
 
   function invalidatePanelCache(panelIds: string[]) {
@@ -277,7 +378,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const newOptions = await vtDef.resolve(vcfg, options as never, resolveCtx)
 
       // Reset to first option if current value is no longer in the option list
-      const cur = store.getState().variables[name]?.value
+      const cur = snapshotVarValue(stateStore.getSnapshot(), name)
       const validValues = newOptions.map((o) => o.value)
       const curArr = Array.isArray(cur) ? cur : cur ? [cur] : []
       const stillValid = curArr.every((v) => validValues.includes(v))
@@ -298,7 +399,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         },
       }))
 
-      emit({ type: 'variable-changed', name, value: newValue })
+      if (!valuesEqual(cur, newValue)) {
+        stateStore.setPatch({ variables: { [name]: newValue } })
+      }
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e)
       store.setState((s) => ({
@@ -331,7 +434,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     if (activeTargets.length === 0) return
 
     try {
-      const tr = store.getState().timeRange
+      const tr = stateStore.getSnapshot().timeRange
       const flatVars = Object.fromEntries(
         Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
       )
@@ -450,14 +553,25 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         throw e
       }
 
-      // Initial variable state
+      const defaultPatch = buildDefaultStatePatch(parsed)
+      suppressDashboardSnapshotEvents = true
+      try {
+        if (Object.keys(defaultPatch).length > 0) {
+          stateStore.setPatch(defaultPatch)
+        }
+      } finally {
+        suppressDashboardSnapshotEvents = false
+      }
+      const snapshot = stateStore.getSnapshot()
+      lastDashboardSnapshot = snapshot
+
+      // Initial variable runtime state. Values mirror the canonical state store.
       const initVars: Record<string, VariableState> = {}
       for (const v of parsed.variables) {
-        const defaultVal = v.defaultValue ?? (v.multi ? [] : '')
         initVars[v.name] = {
           name: v.name,
           type: v.type,
-          value: defaultVal,
+          value: snapshot.variables[v.name] ?? defaultVariableValue(v),
           options: [],
           loading: false,
           error: null,
@@ -483,7 +597,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         config: parsed,
         variables: initVars,
         panels: initPanels,
-        timeRange: parsed.timeRange ?? undefined,
+        timeRange: snapshot.timeRange,
         authContext: store.getState().authContext,
       })
 
@@ -505,29 +619,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const prev = store.getState().variables[name]
       if (!prev) return
 
-      store.setState((s) => ({
-        variables: { ...s.variables, [name]: { ...prev, value } },
-      }))
-      emit({ type: 'variable-changed', name, value })
-
-      // Re-resolve downstream variables that depend on this one (in DAG order)
-      const idx = sortedVarNames.indexOf(name)
-      const downstream = sortedVarNames.slice(idx + 1)
-      const cfg = store.getState().config
-      if (cfg) {
-        const downstreamVarNames = downstream.filter((n) => {
-          const vcfg = cfg.variables.find((v) => v.name === n)
-          if (!vcfg?.query) return false
-          return parseRefs(vcfg.query).refs.includes(name)
-        })
-        void (async () => {
-          for (const n of downstreamVarNames) await resolveOneVariable(n)
-          // Invalidate cache and re-run panels that reference this variable
-          const affected = panelsReferencingVar(name)
-          invalidatePanelCache(affected)
-          await Promise.all(affected.map(executePanel))
-        })()
-      }
+      stateStore.setPatch({ variables: { [name]: value } })
     },
 
     async refreshVariables() {
@@ -554,15 +646,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     setTimeRange(range) {
-      store.setState({ timeRange: range })
-      emit({ type: 'time-range-changed', range })
-      // Invalidate full cache
-      cache.clear()
-      void api.refreshAll()
+      stateStore.setPatch({ timeRange: range })
     },
 
     getTimeRange() {
-      return store.getState().timeRange
+      return stateStore.getSnapshot().timeRange
     },
 
     setAuthContext(context) {
@@ -583,6 +671,16 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   // Expose Zustand store for external subscription (hooks)
   ;(api as CoreEngineAPI & { _store: StoreApi<EngineStore> })._store = store
+
+  const unsubscribeStateStore = stateStore.subscribe((snapshot) => {
+    if (suppressDashboardSnapshotEvents) {
+      lastDashboardSnapshot = snapshot
+      return
+    }
+    void handleDashboardSnapshotChange(snapshot)
+  })
+  ;(api as CoreEngineAPI & { _unsubscribeStateStore: () => void })._unsubscribeStateStore =
+    unsubscribeStateStore
 
   return api
 }

@@ -6,6 +6,7 @@ import type {
   AuthContext,
   AuthorizationDecision,
   AuthorizationRequest,
+  DashboardStateStore,
 } from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ export interface CreateDashboardEngineOptions {
   datasources: DatasourcePluginDef[]
   variableTypes: VariableTypePluginDef[]
   builtinVariables?: BuiltinVariable[]
+  stateStore?: DashboardStateStore
   authContext?: AuthContext
   authorize?: (
     request: AuthorizationRequest,

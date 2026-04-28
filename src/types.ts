@@ -219,6 +219,28 @@ export type DashboardConfig = z.infer<typeof DashboardConfigSchema>
 // Input type (before parsing): fields with defaults are optional — use this when writing a config literal
 export type DashboardInput = z.input<typeof DashboardConfigSchema>
 
+export interface DashboardStateSnapshot {
+  variables: Record<string, string | string[]>
+  timeRange?: { from: string; to: string }
+  refresh?: string
+}
+
+export interface DashboardStatePatch {
+  variables?: Record<string, string | string[] | undefined>
+  timeRange?: { from: string; to: string }
+  refresh?: string
+}
+
+export interface DashboardStateWriteOptions {
+  replace?: boolean
+}
+
+export interface DashboardStateStore {
+  getSnapshot(): DashboardStateSnapshot
+  setPatch(patch: DashboardStatePatch, options?: DashboardStateWriteOptions): void
+  subscribe(listener: (snapshot: DashboardStateSnapshot) => void): () => void
+}
+
 export type PermissionEffect = 'allow' | 'deny'
 export type PermissionAction =
   | 'dashboard:view'

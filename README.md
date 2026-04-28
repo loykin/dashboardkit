@@ -164,8 +164,33 @@ Dashboard App (user code)
 | `panels` | `PanelPluginDef[]` | Panel plugin definitions |
 | `variableTypes` | `VariableTypePluginDef[]` | Variable type plugins |
 | `builtinVariables` | `BuiltinVariable[]?` | Override built-in variables |
+| `stateStore` | `DashboardStateStore?` | Canonical dashboard input state store |
 | `authContext` | `AuthContext?` | Current user/tenant context used by authorization |
 | `authorize` | `(request) => boolean \| AuthorizationDecision` | Called before datasource queries |
+
+### `DashboardStateStore`
+
+Dashboard input state is read and written through one canonical store. Runtime
+state such as panel data, loading flags, resolved variable options, and query
+cache remains internal and derived from this snapshot.
+
+```ts
+interface DashboardStateSnapshot {
+  variables: Record<string, string | string[]>
+  timeRange?: { from: string; to: string }
+  refresh?: string
+}
+
+interface DashboardStateStore {
+  getSnapshot(): DashboardStateSnapshot
+  setPatch(patch: DashboardStatePatch, options?: { replace?: boolean }): void
+  subscribe(listener: (snapshot: DashboardStateSnapshot) => void): () => void
+}
+```
+
+Use `createMemoryDashboardStateStore()` for local state, or provide a custom
+implementation backed by URL query params, router state, or another persistence
+mechanism.
 
 ### `defineDatasource(def)`
 

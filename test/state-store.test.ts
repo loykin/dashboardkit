@@ -1,0 +1,123 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  createDashboardEngine,
+  createMemoryDashboardStateStore,
+  defineDatasource,
+  definePanel,
+  defineVariableType,
+} from '../dist/index.js'
+import type { DashboardInput, QueryOptions } from '../dist/index.js'
+
+const panel = definePanel({
+  id: 'table',
+  name: 'Table',
+  optionsSchema: {},
+  component: () => null,
+})
+
+const constantVariableType = defineVariableType({
+  id: 'constant',
+  name: 'Constant',
+  optionsSchema: {},
+  async resolve(config) {
+    const value = Array.isArray(config.defaultValue)
+      ? config.defaultValue[0]
+      : config.defaultValue
+    return value ? [{ label: value, value }] : []
+  },
+})
+
+function config(): DashboardInput {
+  return {
+    schemaVersion: 1,
+    id: 'state-store-dashboard',
+    title: 'State Store Dashboard',
+    variables: [
+      {
+        name: 'country',
+        type: 'constant',
+        defaultValue: 'KR',
+        options: {},
+      },
+    ],
+    timeRange: { from: 'now-6h', to: 'now' },
+    panels: [
+      {
+        id: 'sales-table',
+        type: 'table',
+        title: 'Sales',
+        gridPos: { x: 0, y: 0, w: 12, h: 6 },
+        datasource: { uid: 'backend', type: 'backend' },
+        targets: [{ refId: 'A' }],
+        options: {},
+      },
+    ],
+  }
+}
+
+test('engine setters write to the canonical dashboard state store', () => {
+  const stateStore = createMemoryDashboardStateStore()
+  const engine = createDashboardEngine({
+    stateStore,
+    datasources: [
+      defineDatasource({
+        uid: 'backend',
+        async query() {
+          return { columns: [], rows: [] }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+  })
+
+  engine.load(config())
+  engine.setVariable('country', 'US')
+  engine.setTimeRange({ from: 'now-1h', to: 'now' })
+
+  assert.deepEqual(stateStore.getSnapshot(), {
+    variables: { country: 'US' },
+    timeRange: { from: 'now-1h', to: 'now' },
+    refresh: '',
+  })
+  assert.equal(engine.getVariable('country')?.value, 'US')
+  assert.deepEqual(engine.getTimeRange(), { from: 'now-1h', to: 'now' })
+})
+
+test('external state store changes drive datasource query variables', async () => {
+  let lastOptions: QueryOptions | undefined
+  const stateStore = createMemoryDashboardStateStore({
+    variables: { country: 'JP' },
+    timeRange: { from: 'now-30m', to: 'now' },
+  })
+  const engine = createDashboardEngine({
+    stateStore,
+    datasources: [
+      defineDatasource({
+        uid: 'backend',
+        async query(options) {
+          lastOptions = options
+          return {
+            columns: [{ name: 'country', type: 'string' }],
+            rows: [[options.variables['country']]],
+          }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+  })
+
+  engine.load(config())
+  await engine.refreshPanel('sales-table')
+
+  assert.deepEqual(lastOptions?.variables, { country: 'JP' })
+  assert.deepEqual(lastOptions?.timeRange, { from: 'now-30m', to: 'now' })
+
+  stateStore.setPatch({ variables: { country: 'US' } })
+  await engine.refreshPanel('sales-table')
+
+  assert.deepEqual(lastOptions?.variables, { country: 'US' })
+})
