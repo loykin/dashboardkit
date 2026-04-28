@@ -31,12 +31,12 @@ const tablePanel = definePanel({
   id: 'secure-table',
   name: 'Secure Table',
   optionsSchema: {},
-  transform(result: QueryResult) {
+  transform(results: QueryResult[]) {
+    const result = results[0] ?? { columns: [], rows: [] }
     return result.rows.map((row) =>
       Object.fromEntries(result.columns.map((column, index) => [column.name, row[index]])),
     )
   },
-  component: () => null,
 })
 
 const config: DashboardInput = {
@@ -58,7 +58,7 @@ const config: DashboardInput = {
       type: 'secure-table',
       title: 'Sales By Country',
       gridPos: { x: 0, y: 0, w: 12, h: 6 },
-      datasources: [{ id: 'main', uid: 'backend-query-api', type: 'backend' }],
+      dataRequests: [{ id: 'main', uid: 'backend-query-api', type: 'backend' }],
       options: {},
     },
   ],
@@ -84,6 +84,7 @@ export function AuthorizationTab() {
   const engine = React.useMemo(() => {
     const datasource = defineDatasource({
       uid: 'backend-query-api',
+      type: 'backend',
       async query(options: QueryOptions) {
         setLogs((current) => [
           {
@@ -110,7 +111,7 @@ export function AuthorizationTab() {
     })
 
     return createDashboardEngine({
-      datasources: [datasource],
+      datasourcePlugins: [datasource],
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [
         {
@@ -208,7 +209,7 @@ export function AuthorizationTab() {
       <div className="rounded border border-gray-200 bg-white p-3">
         <div className="mb-2 text-xs font-semibold text-gray-700">Frontend Target</div>
         <pre className="overflow-auto rounded bg-gray-50 p-3 text-[11px] text-gray-700">
-          {JSON.stringify(config.panels[0]?.datasources[0], null, 2)}
+          {JSON.stringify(config.panels[0]?.dataRequests?.[0], null, 2)}
         </pre>
       </div>
     </div>

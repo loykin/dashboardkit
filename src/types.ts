@@ -9,14 +9,6 @@ const VariableNameSchema = z
   )
   .refine((name) => !name.startsWith('__'), '$__ prefix is reserved for built-in variables')
 
-// ─── Datasource Reference ────────────────────────────────────────────────────
-export const DataSourceRefSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  type: z.string().min(1),
-  options: z.record(z.unknown()).default({}),
-})
-
 // ─── Permissions ─────────────────────────────────────────────────────────────
 // Headless authorization metadata. The engine can enforce these rules through
 // createDashboardEngine({ authContext, authorize }) before datasource queries.
@@ -30,21 +22,41 @@ export const PermissionRuleSchema = z.object({
   condition: z.record(z.unknown()).optional(),
 })
 
+const QueryDescriptorSchema = z.union([
+  z.string(),
+  z.array(z.string()),
+  z.record(z.unknown()),
+])
+
+// ─── Data Request ─────────────────────────────────────────────────────────────
+// A panel or variable can request data from one or more datasource plugins. Each
+// request keeps the plugin identity, query descriptor, and request-local options together.
+export const DataRequestSchema = z
+  .object({
+    id: z.string().min(1).default('main'),
+    uid: z.string().min(1),
+    type: z.string().min(1),
+    query: QueryDescriptorSchema.optional(),
+    options: z.record(z.unknown()).default({}),
+    hide: z.boolean().default(false),
+    permissions: z.array(PermissionRuleSchema).default([]),
+  })
+  .passthrough()
+
 // ─── Variable Config ──────────────────────────────────────────────────────────
 export const VariableConfigSchema = z.object({
   name: VariableNameSchema,
   type: z.string().min(1),
   label: z.string().optional(),
-  datasourceId: z.string().optional(),
-  query: z.string().optional(),
+  dataRequest: DataRequestSchema.optional(),
   defaultValue: z.union([z.string(), z.array(z.string())]).nullable().default(null),
   multi: z.boolean().default(false),
   permissions: z.array(PermissionRuleSchema).default([]),
   options: z.record(z.unknown()).default({}),
 })
 
-// ─── Grid Position (same as Grafana gridPos) ───────────────────────────────────
-// Embedded in each panel — no separate cells map at dashboard level
+// ─── Grid Position ───────────────────────────────────────────────────────────
+// Embedded in each panel; no separate cells map at dashboard level.
 export const GridPosSchema = z.object({
   x: z.number().int().min(0),            // column start (0-based)
   y: z.number().int().min(0),            // row start (0-based)
@@ -52,36 +64,17 @@ export const GridPosSchema = z.object({
   h: z.number().int().min(1),            // height (in rowHeight units)
 })
 
-// ─── Panel Datasource Request ─────────────────────────────────────────────────
-// One panel can request data from one or more datasources. Each entry keeps the
-// datasource location, query descriptor, and request-local options together.
-export const PanelDataSourceSchema = z
-  .object({
-    id: z.string().min(1).default('main'),
-    uid: z.string().min(1),
-    type: z.string().min(1),
-    query: z.union([
-      z.string(),
-      z.array(z.string()),
-      z.record(z.unknown()),
-    ]).optional(),
-    options: z.record(z.unknown()).default({}),
-    hide: z.boolean().default(false),
-    permissions: z.array(PermissionRuleSchema).default([]),
-  })
-  .passthrough()
-
-// ─── Field Display Config (maps to Grafana fieldConfig) ─────────────────────────
+// ─── Field Display Config ────────────────────────────────────────────────────
 // [Extension Point #2 — Panel Plugin / Common]
 // defaults / overrides are visualization metadata interpreted by the panel plugin.
 // The library only defines the structure; actual rendering is the panel component's responsibility.
 export const ThresholdStepSchema = z.object({
   value: z.number().nullable(),  // null = base (lowest threshold)
-  color: z.string(),             // CSS color or Grafana palette name ("green", "red", …)
+  color: z.string(),             // CSS color or semantic palette name
 })
 
 export const FieldConfigSchema = z.object({
-  unit: z.string().optional(),            // "short" | "bytes" | "percent" | "ms" | …
+  unit: z.string().optional(),            // "short" | "bytes" | "percent" | "ms" | ...
   decimals: z.number().int().min(0).optional(),
   min: z.number().optional(),
   max: z.number().optional(),
@@ -122,13 +115,13 @@ export const PanelConfigSchema = z.object({
   gridPos: GridPosSchema,
 
   // ── Data ──
-  datasources: z.array(PanelDataSourceSchema).default([]),
+  dataRequests: z.array(DataRequestSchema).default([]),
 
   // ── Display ──
   fieldConfig: FieldConfigSchema.optional(),
 
   // ── Repeat ──
-  // repeat: variable name. Clones one panel per value of that variable (Grafana repeat panel)
+  // repeat: variable name. Clones one panel per value of that variable.
   repeat: VariableNameSchema.optional(),
   repeatDirection: z.enum(['h', 'v']).default('h'),
 
@@ -153,8 +146,6 @@ const RefreshSchema = z.union([
 ])
 
 // ─── Dashboard Config ───────────────────────────────────────────────────────────
-// Reference: Grafana dashboard JSON model
-//   schemaVersion, id, title, panels[], time, refresh, tags, variables, links
 export const DashboardConfigSchema = z.object({
   schemaVersion: z.literal(1),           // increment as integer when bumping schema version
   id: z.string().min(1),
@@ -162,19 +153,25 @@ export const DashboardConfigSchema = z.object({
   description: z.string().default(''),
   tags: z.array(z.string()).default([]),
 
-  // variables (= Grafana template variables)
+  // dashboard variables
   variables: z.array(VariableConfigSchema).default([]),
 
-  // panel list — gridPos included (Grafana style, no cells map)
-  panels: z.array(PanelConfigSchema),
+  // panel list; gridPos included
+  panels: z.array(PanelConfigSchema).refine(
+    (panels) => panels.every((panel) => {
+      const ids = panel.dataRequests.map((request) => request.id)
+      return ids.length === new Set(ids).size
+    }),
+    'panel data request ids must be unique within each panel',
+  ),
 
   // global grid config (per-panel position is in panel.gridPos)
   layout: z.object({
-    cols: z.number().int().min(1).default(24),      // Grafana default: 24
-    rowHeight: z.number().int().min(1).default(30), // Grafana default: 30px
+    cols: z.number().int().min(1).default(24),
+    rowHeight: z.number().int().min(1).default(30),
   }).default({ cols: 24, rowHeight: 30 }),
 
-  // time range (= Grafana time)
+  // dashboard time range
   timeRange: z.object({
     from: z.string().default('now-6h'),  // ISO 8601 or relative expression
     to: z.string().default('now'),
@@ -194,7 +191,7 @@ export const DashboardConfigSchema = z.object({
 export type VariableConfig = z.infer<typeof VariableConfigSchema>
 export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
-export type PanelDataSourceConfig = z.infer<typeof PanelDataSourceSchema>
+export type DataRequestConfig = z.infer<typeof DataRequestSchema>
 export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
@@ -262,7 +259,7 @@ export interface AuthorizationRequest {
   authContext: AuthContext
   dashboard: DashboardConfig
   panel?: PanelConfig
-  datasource?: PanelDataSourceConfig
+  dataRequest?: DataRequestConfig
   variable?: VariableConfig
   datasourceUid?: string
   permissions: PermissionRule[]
@@ -274,8 +271,8 @@ export interface AuthorizationRequest {
 // Provided by the library: dashboardId, panelId, requestId, variables, timeRange
 // Owned by the app/plugin/backend: query and datasource.options semantics.
 export interface QueryOptions<TOptions = Record<string, unknown>> {
-  /** Full panel datasource request object */
-  datasource: PanelDataSourceConfig
+  /** Full panel or variable data request object */
+  dataRequest: DataRequestConfig
   dashboardId: string
   panelId: string
   requestId: string
@@ -317,7 +314,7 @@ export interface VariableState {
 export interface PanelState {
   id: string
   data: unknown // result of definePanel.transform()
-  rawData: QueryResult | QueryResult[] | null
+  rawData: QueryResult[] | null
   loading: boolean
   error: string | null
   width: number

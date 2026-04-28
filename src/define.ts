@@ -10,10 +10,11 @@ import type {
 } from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
-// uid: 1:1 mapping with panel.datasources[].uid in the dashboard JSON
+// uid: 1:1 mapping with dataRequest.uid in the dashboard JSON
 // options: infrastructure config for this instance (URL, auth, etc.) — differs per environment
 export interface DatasourcePluginDef<TOptions = Record<string, unknown>> {
   uid: string
+  type: string
   options?: TOptions
 
   query: (options: QueryOptions<TOptions>) => Promise<QueryResult>
@@ -34,22 +35,20 @@ export function defineDatasource<TOptions = Record<string, unknown>>(
 export interface PanelProps<TOptions, TData> {
   options: TOptions
   data: TData
-  rawData: QueryResult | QueryResult[] | null
+  rawData: QueryResult[] | null
   width: number
   height: number
   loading: boolean
   error: string | null
 }
 
-export interface PanelPluginDef<TOptions = Record<string, unknown>, TData = unknown> {
+export interface PanelPluginDef<_TOptions = Record<string, unknown>, TData = unknown> {
   id: string
   name: string
   optionsSchema: OptionSchema
 
-  // Transforms QueryResult into the shape consumed by the panel (defaults to QueryResult as-is)
-  transform?: (result: QueryResult | QueryResult[]) => TData
-  // Optional adapter-owned component metadata. The headless core does not inspect it.
-  component?: (props: PanelProps<TOptions, TData>) => unknown
+  // Transforms query results into the shape consumed by the panel.
+  transform?: (results: QueryResult[]) => TData
 }
 
 export function definePanel<TOptions = Record<string, unknown>, TData = unknown>(
@@ -61,7 +60,7 @@ export function definePanel<TOptions = Record<string, unknown>, TData = unknown>
 // ─── VariableType Plugin ────────────────────────────────────────────────────────
 
 export interface VariableResolveContext {
-  datasources: Record<string, DatasourcePluginDef>
+  datasourcePlugins: Record<string, DatasourcePluginDef>
   builtins: Record<string, string>
   variables: Record<string, string | string[]>
   dashboard: { id: string; title: string }
@@ -90,7 +89,7 @@ export function defineVariableType<TOptions = Record<string, unknown>>(
 
 export interface CreateDashboardEngineOptions {
   panels: PanelPluginDef[]
-  datasources: DatasourcePluginDef[]
+  datasourcePlugins: DatasourcePluginDef[]
   variableTypes: VariableTypePluginDef[]
   builtinVariables?: BuiltinVariable[]
   stateStore?: DashboardStateStore

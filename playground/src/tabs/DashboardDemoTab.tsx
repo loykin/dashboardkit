@@ -4,6 +4,7 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
+  interpolate,
 } from '@dashboard-engine/core'
 import {
   DashboardGrid,
@@ -48,9 +49,9 @@ const CITIES: Record<string, string[]> = {
 
 const mockDs = defineDatasource({
   uid: 'mock',
+  type: 'mock',
   async query({ query: rawQuery = '', variables }) {
     // Interpolation is also the plugin's responsibility — substitute using variables from the library
-    const { interpolate } = await import('@dashboard-engine/core')
     const interpolatedQuery = interpolate(String(rawQuery), { variables, builtins: {}, functions: {} })
 
     await new Promise((r) => setTimeout(r, 300 + Math.random() * 200))
@@ -104,12 +105,12 @@ const queryVarType = defineVariableType({
   name: 'Query Variable',
   optionsSchema: {},
   async resolve(config, _options, ctx) {
-    const ds = config.datasourceId ? ctx.datasources[config.datasourceId] : undefined
-    if (!ds?.metricFindQuery || !config.query) return []
+    const request = config.dataRequest
+    const ds = request ? ctx.datasourcePlugins[request.uid] : undefined
+    if (!request?.query || !ds?.metricFindQuery) return []
 
     // Substitute variables in query
-    const { interpolate } = await import('@dashboard-engine/core')
-    const interpolated = interpolate(config.query, {
+    const interpolated = interpolate(String(request.query), {
       variables: ctx.variables,
       builtins: ctx.builtins,
       functions: {},
@@ -132,26 +133,25 @@ const tablePanel = definePanel({
   id: 'table',
   name: 'Table Panel',
   optionsSchema: {},
-  transform: toRows,
-  component: () => null, // headless: rendering is handled by the children function
+  transform: (results) => toRows(results[0] ?? { columns: [], rows: [] }),
 })
 
 const statPanel = definePanel({
   id: 'stat',
   name: 'Stat Panel',
   optionsSchema: {},
-  transform: (result) => {
+  transform: (results) => {
+    const result = results[0] ?? { columns: [], rows: [] }
     const rows = toRows(result)
     const total = rows.reduce((sum, r) => sum + ((r['amount'] as number) ?? 0), 0)
     return { total, count: rows.length }
   },
-  component: () => null,
 })
 
 // ─── Engine (singleton created at module scope) ────────────────────────────────
 
 const engine = createDashboardEngine({
-  datasources: [mockDs],
+  datasourcePlugins: [mockDs],
   panels: [tablePanel, statPanel] as PanelPluginDef[],
   variableTypes: [queryVarType],
 })
@@ -169,8 +169,12 @@ const config: DashboardInput = {
       name: 'country',
       type: 'query',
       label: 'Country',
-      datasourceId: 'mock',
-      query: 'SELECT DISTINCT country FROM sales',
+      dataRequest: {
+        id: 'options',
+        uid: 'mock',
+        type: 'mock',
+        query: 'SELECT DISTINCT country FROM sales',
+      },
       defaultValue: 'KR',
       multi: false,
       options: {},
@@ -179,8 +183,12 @@ const config: DashboardInput = {
       name: 'city',
       type: 'query',
       label: 'City',
-      datasourceId: 'mock',
-      query: "SELECT city FROM cities WHERE country = '$country'",
+      dataRequest: {
+        id: 'options',
+        uid: 'mock',
+        type: 'mock',
+        query: "SELECT city FROM cities WHERE country = '$country'",
+      },
       defaultValue: null,
       multi: false,
       options: {},
@@ -192,7 +200,7 @@ const config: DashboardInput = {
       type: 'stat',
       title: 'Total Sales — $country',
       gridPos: { x: 0, y: 0, w: 8, h: 3 },
-      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country'" }],
+      dataRequests: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country'" }],
       options: {},
     },
     {
@@ -200,7 +208,7 @@ const config: DashboardInput = {
       type: 'stat',
       title: '$city Sales',
       gridPos: { x: 8, y: 0, w: 8, h: 3 },
-      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      dataRequests: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
     {
@@ -208,7 +216,7 @@ const config: DashboardInput = {
       type: 'table',
       title: 'Sales Table',
       gridPos: { x: 0, y: 3, w: 24, h: 7 },
-      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      dataRequests: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
   ],

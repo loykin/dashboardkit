@@ -17,6 +17,7 @@ import type {
   PermissionAction,
   PermissionRule,
   DashboardStateSnapshot,
+  DataRequestConfig,
 } from './types'
 import { DashboardConfigSchema } from './types'
 import { createMemoryDashboardStateStore } from './state'
@@ -51,7 +52,7 @@ interface CacheEntry {
 export function createDashboardEngine(options: CreateDashboardEngineOptions): CoreEngineAPI {
   const {
     panels: panelDefs,
-    datasources: dsDefs,
+    datasourcePlugins: dsDefs,
     variableTypes: vtDefs,
     builtinVariables = [],
     stateStore = createMemoryDashboardStateStore(),
@@ -60,7 +61,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   } =
     options
 
-  // Plugin maps — keyed by uid for direct lookup (panel.datasources[].uid → plugin)
+  // Plugin maps — keyed by uid for direct lookup (panel.dataRequests[].uid → plugin)
   const dsMap = new Map<string, DatasourcePluginDef>(dsDefs.map((d) => [d.uid, d]))
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
   const vtMap = new Map<string, VariableTypePluginDef>(vtDefs.map((v) => [v.id, v]))
@@ -106,9 +107,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return { ...stateStore.getSnapshot().variables }
   }
 
-  function cacheKey(dsUid: string, datasourceJson: string, tr?: { from: string; to: string }): string {
+  function cacheKey(dsUid: string, dataRequestJson: string, tr?: { from: string; to: string }): string {
     const authKey = store.getState().authContext.subject?.id ?? 'anonymous'
-    return `${dsUid}::${authKey}::${datasourceJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+    return `${dsUid}::${authKey}::${dataRequestJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
   }
 
   function rulesForAction(rules: PermissionRule[], action: PermissionAction): PermissionRule[] {
@@ -181,6 +182,20 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   function defaultVariableValue(v: import('./types').VariableConfig): string | string[] {
     return v.defaultValue ?? (v.multi ? [] : '')
+  }
+
+  function requestRefs(request: DataRequestConfig | undefined): string[] {
+    if (!request?.query) return []
+    return parseRefs(JSON.stringify(request.query)).refs
+  }
+
+  function getDatasourceDef(request: DataRequestConfig): DatasourcePluginDef {
+    const dsDef = dsMap.get(request.uid)
+    if (!dsDef) throw new Error(`datasource "${request.uid}" not registered in engine`)
+    if (dsDef.type !== request.type) {
+      throw new Error(`datasource "${request.uid}" type mismatch: expected "${request.type}", got "${dsDef.type}"`)
+    }
+    return dsDef
   }
 
   function buildDefaultStatePatch(cfg: DashboardConfig): import('./types').DashboardStatePatch {
@@ -260,7 +275,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         if (idx === -1) continue
         for (const name of sortedVarNames.slice(idx + 1)) {
           const vcfg = cfg.variables.find((v) => v.name === name)
-          if (vcfg?.query && parseRefs(vcfg.query).refs.includes(changed)) downstream.add(name)
+          if (requestRefs(vcfg?.dataRequest).includes(changed)) downstream.add(name)
         }
       }
       for (const name of downstream) await resolveOneVariable(name)
@@ -281,8 +296,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     for (const pid of panelIds) {
       const pcfg = cfg.panels.find((p) => p.id === pid)
       if (!pcfg) continue
-      for (const datasource of pcfg.datasources) {
-        const uid = datasource.uid
+      for (const request of pcfg.dataRequests) {
+        const uid = request.uid
         for (const key of [...cache.keys()]) {
           if (key.startsWith(`${uid}::`)) cache.delete(key)
         }
@@ -290,18 +305,18 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
-  async function ensurePanelDatasourceAuthorized(
+  async function ensurePanelDataRequestAuthorized(
     cfg: DashboardConfig,
     pcfg: import('./types').PanelConfig,
-    datasource: import('./types').PanelDataSourceConfig,
+    dataRequest: DataRequestConfig,
     datasourceUid: string,
   ): Promise<void> {
-    const permissions = [...cfg.permissions, ...pcfg.permissions, ...datasource.permissions]
+    const permissions = [...cfg.permissions, ...pcfg.permissions, ...dataRequest.permissions]
     await ensureAuthorized({
       action: 'panel:query',
       dashboard: cfg,
       panel: pcfg,
-      datasource,
+      dataRequest,
       datasourceUid,
       permissions,
     })
@@ -309,7 +324,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       action: 'datasource:query',
       dashboard: cfg,
       panel: pcfg,
-      datasource,
+      dataRequest,
       datasourceUid,
       permissions,
     })
@@ -321,8 +336,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return cfg.panels
       .filter((p) => {
         const inTitle = p.title ? parseRefs(p.title).refs.includes(varName) : false
-        const inDatasources = p.datasources.some((d) => JSON.stringify(d).includes('$' + varName))
-        return inTitle || inDatasources
+        const inDataRequests = p.dataRequests.some((request) => JSON.stringify(request).includes('$' + varName))
+        return inTitle || inDataRequests
       })
       .map((p) => p.id)
   }
@@ -355,20 +370,22 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       const options = resolveOptions(vcfg.options, vtDef)
       const resolveCtx = {
-        datasources: Object.fromEntries(dsMap2),
+        datasourcePlugins: Object.fromEntries(dsMap2),
         builtins: buildCtxBuiltins(),
         variables: buildCtxVariables(),
         dashboard: { id: cfg.id, title: cfg.title },
         authContext: store.getState().authContext,
       }
 
-      if (vcfg.datasourceId) {
+      if (vcfg.dataRequest) {
+        getDatasourceDef(vcfg.dataRequest)
         await ensureAuthorized({
           action: 'datasource:query',
           dashboard: cfg,
           variable: vcfg,
-          datasourceUid: vcfg.datasourceId,
-          permissions: [...cfg.permissions, ...vcfg.permissions],
+          dataRequest: vcfg.dataRequest,
+          datasourceUid: vcfg.dataRequest.uid,
+          permissions: [...cfg.permissions, ...vcfg.permissions, ...vcfg.dataRequest.permissions],
         })
       }
 
@@ -415,7 +432,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   // ─── Panel Query Execution ──────────────────────────────────────────────────
-  // Run each datasources[] request in parallel → pass results to panelDef.transform
+  // Run each dataRequests[] entry in parallel, then pass all results to panelDef.transform.
 
   async function executePanel(panelId: string): Promise<void> {
     const cfg = store.getState().config
@@ -426,8 +443,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const panel = store.getState().panels[panelId]
     if (!panel?.active) return // skip panels outside the viewport
 
-    const activeDatasources = pcfg.datasources.filter((d) => !d.hide)
-    if (activeDatasources.length === 0) return
+    const activeRequests = pcfg.dataRequests.filter((request) => !request.hide)
+    if (activeRequests.length === 0) return
 
     try {
       const tr = stateStore.getSnapshot().timeRange
@@ -435,18 +452,19 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
       )
 
-      for (const datasource of activeDatasources) {
-        await ensurePanelDatasourceAuthorized(cfg, pcfg, datasource, datasource.uid)
+      for (const request of activeRequests) {
+        getDatasourceDef(request)
+        await ensurePanelDataRequestAuthorized(cfg, pcfg, request, request.uid)
       }
 
       // Check cache only after authorization, so denied users never receive stale data.
       const cachedResults: QueryResult[] = []
       let allCached = true
-      for (const datasource of activeDatasources) {
-        const key = cacheKey(datasource.uid, JSON.stringify(datasource), tr)
+      for (const request of activeRequests) {
+        const key = cacheKey(request.uid, JSON.stringify(request), tr)
         const cached = cache.get(key)
         if (cached) {
-          cachedResults.push({ ...cached.data, requestId: datasource.id })
+          cachedResults.push({ ...cached.data, requestId: request.id })
         } else {
           allCached = false
           break
@@ -455,14 +473,13 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       if (allCached) {
         const panelDef = panelMap.get(pcfg.type)
-        const raw = cachedResults.length === 1 ? cachedResults[0]! : cachedResults
         const data = panelDef?.transform
-          ? panelDef.transform(raw)
+          ? panelDef.transform(cachedResults)
           : cachedResults
         store.setState((s) => ({
           panels: {
             ...s.panels,
-            [panelId]: { ...s.panels[panelId]!, data, rawData: raw, loading: false, error: null },
+            [panelId]: { ...s.panels[panelId]!, data, rawData: cachedResults, loading: false, error: null },
           },
         }))
         emit({ type: 'panel-data', panelId, data })
@@ -476,20 +493,19 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       emit({ type: 'panel-loading', panelId })
 
       const results = await Promise.all(
-        activeDatasources.map(async (datasource) => {
-          const uid = datasource.uid
-          const dsDef = dsMap.get(uid)
-          if (!dsDef) throw new Error(`datasource "${uid}" not registered in engine`)
+        activeRequests.map(async (request) => {
+          const uid = request.uid
+          const dsDef = getDatasourceDef(request)
 
-          const key = cacheKey(uid, JSON.stringify(datasource), tr)
+          const key = cacheKey(uid, JSON.stringify(request), tr)
 
           const result = await dsDef.query({
-            datasource,
+            dataRequest: request,
             dashboardId: cfg.id,
             panelId,
-            requestId: datasource.id,
-            ...(datasource.query !== undefined ? { query: datasource.query } : {}),
-            requestOptions: datasource.options,
+            requestId: request.id,
+            ...(request.query !== undefined ? { query: request.query } : {}),
+            requestOptions: request.options,
             variables: flatVars,
             datasourceOptions: dsDef.options ?? ({} as never),
             authContext: store.getState().authContext,
@@ -497,18 +513,17 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           })
 
           cache.set(key, { data: result, ts: Date.now() })
-          return { ...result, requestId: datasource.id }
+          return { ...result, requestId: request.id }
         }),
       )
 
       const panelDef = panelMap.get(pcfg.type)
-      const raw = results.length === 1 ? results[0]! : results
-      const data = panelDef?.transform ? panelDef.transform(raw) : results
+      const data = panelDef?.transform ? panelDef.transform(results) : results
 
       store.setState((s) => ({
         panels: {
           ...s.panels,
-          [panelId]: { ...s.panels[panelId]!, data, rawData: raw, loading: false, error: null },
+          [panelId]: { ...s.panels[panelId]!, data, rawData: results, loading: false, error: null },
         },
       }))
       emit({ type: 'panel-data', panelId, data })
@@ -531,7 +546,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         sortedVarNames = buildVariableDAG(
           parsed.variables.map((v) => ({
             name: v.name,
-            ...(v.query !== undefined ? { query: v.query } : {}),
+            ...(v.dataRequest?.query !== undefined ? { query: JSON.stringify(v.dataRequest.query) } : {}),
           })),
         )
       } catch (e) {

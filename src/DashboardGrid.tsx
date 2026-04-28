@@ -12,7 +12,7 @@ export interface PanelRenderProps {
   panelId: string
   panelType: string
   data: unknown
-  rawData: import('./types').QueryResult | import('./types').QueryResult[] | null
+  rawData: import('./types').QueryResult[] | null
   loading: boolean
   error: string | null
   /** Ref to attach to the panel root element (enables viewport virtualization) */
@@ -66,7 +66,7 @@ export function DashboardGrid({
   }, [width])
 
   // Convert DashboardConfig → react-grid-layout Layout
-  // panel.gridPos holds position/size directly (Grafana style)
+  // panel.gridPos holds position/size directly.
   const layout: LayoutItem[] = config.panels.map((p) => ({
     i: p.id,
     x: p.gridPos.x,

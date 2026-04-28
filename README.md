@@ -6,7 +6,7 @@ A headless dashboard orchestration engine inspired by Grafana — pure TypeScrip
 
 - **Headless** — No styles included. You own the layout and panel UI
 - **Plugin-based** — Register Datasource, Panel, and VariableType plugins to extend functionality
-- **Structured datasource requests** — Each panel declares `datasources[]` entries with location, query, and options together
+- **Structured data requests** — Each panel declares `dataRequests[]` entries with datasource identity, query descriptor, and options together
 - **Variable interpolation** — `$varName` / `${varName}` syntax with DAG-based dependency ordering
 - **Query caching** — Per-panel result cache; automatically invalidated on time range or variable change
 - **Authorization hook** — Block datasource queries before the plugin sends anything to the backend
@@ -34,6 +34,7 @@ import { DashboardGrid, useDashboard, usePanel } from '@dashboard-engine/core/re
 // 1. Define plugins
 const myDs = defineDatasource({
   uid: 'my-api',
+  type: 'backend',
   options: { baseUrl: 'https://api.example.com' },
   async query({ dashboardId, panelId, requestId, query, variables, timeRange, datasourceOptions }) {
     const res = await fetch(`${datasourceOptions.baseUrl}/dashboards/query`, {
@@ -49,13 +50,14 @@ const TablePanel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {},
-  component: ({ data, loading }) =>
-    loading ? <p>Loading…</p> : <pre>{JSON.stringify(data, null, 2)}</pre>,
+  transform(results) {
+    return results[0]?.rows ?? []
+  },
 })
 
 // 2. Create engine instance
 const engine = createDashboardEngine({
-  datasources: [myDs],
+  datasourcePlugins: [myDs],
   panels: [TablePanel],
   variableTypes: [],
   authContext: {
@@ -83,7 +85,7 @@ const config = {
       title: 'Users',
       type: 'table',
       gridPos: { x: 0, y: 0, w: 12, h: 8 },
-      datasources: [
+      dataRequests: [
         {
           id: 'main',
           uid: 'my-api',
@@ -101,23 +103,11 @@ function MyDashboard() {
   const { setVariable } = useDashboard(engine, config)
 
   return (
-    <DashboardGrid
-      engine={engine}
-      renderPanel={(panel, { width, height }) => {
-        const { data, loading, error } = usePanel(engine, panel.id)
-        return (
-          <TablePanel
-            options={panel.options}
-            data={data}
-            loading={loading}
-            error={error}
-            width={width}
-            height={height}
-            rawData={null}
-          />
-        )
-      }}
-    />
+    <DashboardGrid engine={engine} config={config}>
+      {({ data, loading, error }) =>
+        loading ? <p>Loading...</p> : error ? <p>{error}</p> : <pre>{JSON.stringify(data, null, 2)}</pre>
+      }
+    </DashboardGrid>
   )
 }
 ```
@@ -128,12 +118,12 @@ function MyDashboard() {
 Dashboard App (user code)
 │
 ├── DashboardConfig          ← JSON-serializable schema (Zod-validated)
-│   ├── panels[].gridPos     ← Layout position (Grafana gridPos style)
-│   ├── panels[].datasources[] ← Data requests with datasource + query + options
+│   ├── panels[].gridPos     ← Layout position
+│   ├── panels[].dataRequests[] ← Data requests with datasource + query + options
 │   └── variables[]          ← Variable configuration
 │
 ├── createDashboardEngine()  ← Engine instance factory
-│   ├── datasources[]        ← DatasourcePluginDef (uid-keyed)
+│   ├── datasourcePlugins[]  ← DatasourcePluginDef (uid-keyed)
 │   ├── panels[]             ← PanelPluginDef
 │   └── variableTypes[]      ← VariableTypePluginDef
 │
@@ -157,7 +147,7 @@ Dashboard App (user code)
 |---------|---------|--------------|
 | Panel data requests | `id`, `uid`, `type`, `query`, `options`, `hide` | Query semantics and options |
 | Variable interpolation | `$var` token parsing, DAG ordering | Actual interpolation (via `interpolate()` utility) |
-| Data transformation | `QueryResult` type definition | `PanelPluginDef.transform()` |
+| Data transformation | `QueryResult` type definition | `PanelPluginDef.transform(results)` |
 | Styling | None | You decide |
 
 ## API
@@ -166,7 +156,7 @@ Dashboard App (user code)
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `datasources` | `DatasourcePluginDef[]` | Datasource plugin instances |
+| `datasourcePlugins` | `DatasourcePluginDef[]` | Datasource plugin instances |
 | `panels` | `PanelPluginDef[]` | Panel plugin definitions |
 | `variableTypes` | `VariableTypePluginDef[]` | Variable type plugins |
 | `builtinVariables` | `BuiltinVariable[]?` | Override built-in variables |
@@ -206,7 +196,7 @@ const stateStore = createBrowserDashboardStateStore()
 
 const engine = createDashboardEngine({
   stateStore,
-  datasources,
+  datasourcePlugins,
   panels,
   variableTypes,
 })
@@ -220,7 +210,8 @@ engine.setRefresh('30s')
 
 ```ts
 interface DatasourcePluginDef<TOptions> {
-  uid: string                      // Matches panel.datasources[].uid in config
+  uid: string                      // Matches dataRequest.uid in config
+  type: string                     // Must match dataRequest.type
   options?: TOptions               // Infrastructure config (URL, auth, etc.)
   query(options: QueryOptions<TOptions>): Promise<QueryResult>
   metricFindQuery?(query, vars): Promise<VariableOption[]>
@@ -231,7 +222,7 @@ interface DatasourcePluginDef<TOptions> {
 
 ```ts
 interface QueryOptions<TOptions> {
-  datasource: PanelDataSourceConfig
+  dataRequest: DataRequestConfig
   dashboardId: string
   panelId: string
   requestId: string
@@ -254,7 +245,7 @@ authorization.
 
 ```ts
 interface QueryResult {
-  columns: string[]
+  columns: Array<{ name: string; type: string }>
   rows: unknown[][]
   requestId?: string
   meta?: Record<string, unknown>
@@ -281,21 +272,21 @@ const statOptionsSchema: OptionSchema = {
   colorOk:       { type: 'color',  label: 'OK color',           default: '#22c55e' },
 }
 
-const StatPanel = definePanel<StatOptions>({
+const StatPanel = definePanel<StatOptions, number>({
   id: 'stat',
   name: 'Stat Panel',
   optionsSchema: statOptionsSchema,
-  component: ({ options, data }) => {
-    const opts = applyOptionDefaults(statOptionsSchema, options) as StatOptions
-    const color = data >= opts.thresholdCrit ? 'red'
-                : data >= opts.thresholdWarn ? 'orange'
-                : opts.colorOk
-    return <div style={{ color }}>{data}</div>
+  transform(results) {
+    const result = results[0]
+    if (!result) return 0
+    return result.rows.reduce((sum, row) => sum + Number(row[0] ?? 0), 0)
   },
 })
 ```
 
-Then set per-panel values in `DashboardConfig`. Any field omitted here falls back to the `default` declared in `optionsSchema`:
+Then set per-panel values in `DashboardConfig`. Any field omitted here can fall
+back to the `default` declared in `optionsSchema` when your renderer calls
+`applyOptionDefaults`:
 
 ```ts
 panels: [

@@ -20,12 +20,12 @@ const tablePanel = definePanel({
   id: 'url-table',
   name: 'URL Table',
   optionsSchema: {},
-  transform(result: QueryResult) {
+  transform(results: QueryResult[]) {
+    const result = results[0] ?? { columns: [], rows: [] }
     return result.rows.map((row) =>
       Object.fromEntries(result.columns.map((column, index) => [column.name, row[index]])),
     )
   },
-  component: () => null,
 })
 
 const staticVariableType = defineVariableType({
@@ -62,7 +62,7 @@ const config: DashboardInput = {
       type: 'url-table',
       title: 'URL Backed Sales',
       gridPos: { x: 0, y: 0, w: 12, h: 6 },
-      datasources: [{ id: 'main', uid: 'url-state-backend', type: 'backend' }],
+      dataRequests: [{ id: 'main', uid: 'url-state-backend', type: 'backend' }],
       options: {},
     },
   ],
@@ -76,6 +76,7 @@ export function UrlStateTab() {
     const stateStore = createBrowserDashboardStateStore()
     const datasource = defineDatasource({
       uid: 'url-state-backend',
+      type: 'backend',
       async query({ variables, timeRange }) {
         return {
           columns: [
@@ -96,7 +97,7 @@ export function UrlStateTab() {
 
     return createDashboardEngine({
       stateStore,
-      datasources: [datasource],
+      datasourcePlugins: [datasource],
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [staticVariableType],
     })

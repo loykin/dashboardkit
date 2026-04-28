@@ -15,7 +15,6 @@ const panel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {},
-  component: () => null,
 })
 
 const constantVariableType = defineVariableType({
@@ -50,7 +49,7 @@ function config(): DashboardInput {
         type: 'table',
         title: 'Sales',
         gridPos: { x: 0, y: 0, w: 12, h: 6 },
-        datasources: [{ id: 'main', uid: 'backend', type: 'backend' }],
+        dataRequests: [{ id: 'main', uid: 'backend', type: 'backend' }],
         options: {},
       },
     ],
@@ -61,9 +60,10 @@ test('engine setters write to the canonical dashboard state store', () => {
   const stateStore = createMemoryDashboardStateStore()
   const engine = createDashboardEngine({
     stateStore,
-    datasources: [
+    datasourcePlugins: [
       defineDatasource({
         uid: 'backend',
+        type: 'backend',
         async query() {
           return { columns: [], rows: [] }
         },
@@ -96,9 +96,10 @@ test('external state store changes drive datasource query variables', async () =
   })
   const engine = createDashboardEngine({
     stateStore,
-    datasources: [
+    datasourcePlugins: [
       defineDatasource({
         uid: 'backend',
+        type: 'backend',
         async query(options) {
           lastOptions = options
           return {
