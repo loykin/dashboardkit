@@ -10,7 +10,7 @@ import type {
 } from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
-// uid: 1:1 mapping with target.datasource.uid in the dashboard JSON
+// uid: 1:1 mapping with panel.datasources[].uid in the dashboard JSON
 // options: infrastructure config for this instance (URL, auth, etc.) — differs per environment
 export interface DatasourcePluginDef<TOptions = Record<string, unknown>> {
   uid: string
@@ -34,7 +34,7 @@ export function defineDatasource<TOptions = Record<string, unknown>>(
 export interface PanelProps<TOptions, TData> {
   options: TOptions
   data: TData
-  rawData: QueryResult | null
+  rawData: QueryResult | QueryResult[] | null
   width: number
   height: number
   loading: boolean
@@ -47,7 +47,7 @@ export interface PanelPluginDef<TOptions = Record<string, unknown>, TData = unkn
   optionsSchema: OptionSchema
 
   // Transforms QueryResult into the shape consumed by the panel (defaults to QueryResult as-is)
-  transform?: (result: QueryResult) => TData
+  transform?: (result: QueryResult | QueryResult[]) => TData
   // Optional adapter-owned component metadata. The headless core does not inspect it.
   component?: (props: PanelProps<TOptions, TData>) => unknown
 }

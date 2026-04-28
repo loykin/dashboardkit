@@ -50,15 +50,20 @@ function dashboardConfig(): DashboardInput {
         type: 'table',
         title: 'Sales',
         gridPos: { x: 0, y: 0, w: 12, h: 6 },
-        datasource: { uid: 'backend', type: 'backend' },
-        targets: [{ refId: 'A' }],
+        datasources: [{
+          id: 'main',
+          uid: 'backend',
+          type: 'backend',
+          query: 'sales.list',
+          options: { limit: 100 },
+        }],
         options: {},
       },
     ],
   }
 }
 
-test('viewer datasource query sends identifiers without frontend query text', async () => {
+test('viewer datasource query sends structured datasource request', async () => {
   let queryCalls = 0
   let lastOptions: QueryOptions | undefined
   const datasource = defineDatasource({
@@ -89,9 +94,11 @@ test('viewer datasource query sends identifiers without frontend query text', as
   assert.equal(engine.getPanel('sales-table')?.error, null)
   assert.equal(lastOptions?.dashboardId, 'sales-dashboard')
   assert.equal(lastOptions?.panelId, 'sales-table')
-  assert.equal(lastOptions?.refId, 'A')
+  assert.equal(lastOptions?.requestId, 'main')
+  assert.equal(lastOptions?.datasource.uid, 'backend')
+  assert.equal(lastOptions?.query, 'sales.list')
+  assert.deepEqual(lastOptions?.requestOptions, { limit: 100 })
   assert.deepEqual(lastOptions?.variables, { country: 'KR' })
-  assert.equal(lastOptions?.target['query'], undefined)
   assert.equal(lastOptions?.authContext?.subject?.id, 'viewer-1')
 })
 

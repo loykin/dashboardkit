@@ -60,7 +60,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   } =
     options
 
-  // Plugin maps — keyed by uid for direct lookup (target.datasource.uid → plugin)
+  // Plugin maps — keyed by uid for direct lookup (panel.datasources[].uid → plugin)
   const dsMap = new Map<string, DatasourcePluginDef>(dsDefs.map((d) => [d.uid, d]))
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
   const vtMap = new Map<string, VariableTypePluginDef>(vtDefs.map((v) => [v.id, v]))
@@ -106,9 +106,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return { ...stateStore.getSnapshot().variables }
   }
 
-  function cacheKey(dsUid: string, targetJson: string, tr?: { from: string; to: string }): string {
+  function cacheKey(dsUid: string, datasourceJson: string, tr?: { from: string; to: string }): string {
     const authKey = store.getState().authContext.subject?.id ?? 'anonymous'
-    return `${dsUid}::${authKey}::${targetJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+    return `${dsUid}::${authKey}::${datasourceJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
   }
 
   function rulesForAction(rules: PermissionRule[], action: PermissionAction): PermissionRule[] {
@@ -166,12 +166,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const reason = decision.reason ?? 'authorization denied'
     emit({ type: 'authorization-denied', action: request.action, resourceId, reason })
     throw new Error(reason)
-  }
-
-  // Extract datasource uid from target — the only target field the library knows
-  // target.datasource is a known field of TargetSchema so typed access is safe
-  function resolveTargetDsUid(target: import('./types').Target, panelDsUid?: string): string | undefined {
-    return target.datasource?.uid ?? panelDsUid
   }
 
   function valuesEqual(a: string | string[] | undefined, b: string | string[] | undefined): boolean {
@@ -287,10 +281,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     for (const pid of panelIds) {
       const pcfg = cfg.panels.find((p) => p.id === pid)
       if (!pcfg) continue
-      const panelDsUid = pcfg.datasource?.uid
-      for (const target of pcfg.targets) {
-        const uid = resolveTargetDsUid(target, panelDsUid)
-        if (!uid) continue
+      for (const datasource of pcfg.datasources) {
+        const uid = datasource.uid
         for (const key of [...cache.keys()]) {
           if (key.startsWith(`${uid}::`)) cache.delete(key)
         }
@@ -298,18 +290,18 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
-  async function ensureTargetQueryAuthorized(
+  async function ensurePanelDatasourceAuthorized(
     cfg: DashboardConfig,
     pcfg: import('./types').PanelConfig,
-    target: import('./types').Target,
+    datasource: import('./types').PanelDataSourceConfig,
     datasourceUid: string,
   ): Promise<void> {
-    const permissions = [...cfg.permissions, ...pcfg.permissions, ...target.permissions]
+    const permissions = [...cfg.permissions, ...pcfg.permissions, ...datasource.permissions]
     await ensureAuthorized({
       action: 'panel:query',
       dashboard: cfg,
       panel: pcfg,
-      target,
+      datasource,
       datasourceUid,
       permissions,
     })
@@ -317,23 +309,20 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       action: 'datasource:query',
       dashboard: cfg,
       panel: pcfg,
-      target,
+      datasource,
       datasourceUid,
       permissions,
     })
   }
 
-  // Panel IDs that reference a specific variable
-  // Serialize the full target as JSON and check for $varName presence
-  // (also detects variable references in plugin-specific fields automatically)
   function panelsReferencingVar(varName: string): string[] {
     const cfg = store.getState().config
     if (!cfg) return []
     return cfg.panels
       .filter((p) => {
         const inTitle = p.title ? parseRefs(p.title).refs.includes(varName) : false
-        const inTargets = p.targets.some((t) => JSON.stringify(t).includes('$' + varName))
-        return inTitle || inTargets
+        const inDatasources = p.datasources.some((d) => JSON.stringify(d).includes('$' + varName))
+        return inTitle || inDatasources
       })
       .map((p) => p.id)
   }
@@ -426,7 +415,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   // ─── Panel Query Execution ──────────────────────────────────────────────────
-  // Run each targets[] in parallel → pass results[] to panelDef.transform
+  // Run each datasources[] request in parallel → pass results to panelDef.transform
 
   async function executePanel(panelId: string): Promise<void> {
     const cfg = store.getState().config
@@ -437,9 +426,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const panel = store.getState().panels[panelId]
     if (!panel?.active) return // skip panels outside the viewport
 
-    // Only run targets where hide is false (library-owned field)
-    const activeTargets = pcfg.targets.filter((t) => !t.hide)
-    if (activeTargets.length === 0) return
+    const activeDatasources = pcfg.datasources.filter((d) => !d.hide)
+    if (activeDatasources.length === 0) return
 
     try {
       const tr = stateStore.getSnapshot().timeRange
@@ -447,24 +435,18 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
       )
 
-      const panelDsUid = pcfg.datasource?.uid
-
-      for (const target of activeTargets) {
-        const uid = resolveTargetDsUid(target, panelDsUid)
-        if (!uid) continue
-        await ensureTargetQueryAuthorized(cfg, pcfg, target, uid)
+      for (const datasource of activeDatasources) {
+        await ensurePanelDatasourceAuthorized(cfg, pcfg, datasource, datasource.uid)
       }
 
       // Check cache only after authorization, so denied users never receive stale data.
       const cachedResults: QueryResult[] = []
       let allCached = true
-      for (const target of activeTargets) {
-        const uid = resolveTargetDsUid(target, panelDsUid)
-        if (!uid) { allCached = false; break }
-        const key = cacheKey(uid, JSON.stringify(target), tr)
+      for (const datasource of activeDatasources) {
+        const key = cacheKey(datasource.uid, JSON.stringify(datasource), tr)
         const cached = cache.get(key)
         if (cached) {
-          cachedResults.push({ ...cached.data, refId: target.refId })
+          cachedResults.push({ ...cached.data, requestId: datasource.id })
         } else {
           allCached = false
           break
@@ -473,13 +455,14 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       if (allCached) {
         const panelDef = panelMap.get(pcfg.type)
+        const raw = cachedResults.length === 1 ? cachedResults[0]! : cachedResults
         const data = panelDef?.transform
-          ? panelDef.transform(cachedResults.length === 1 ? cachedResults[0]! : (cachedResults as unknown as QueryResult))
+          ? panelDef.transform(raw)
           : cachedResults
         store.setState((s) => ({
           panels: {
             ...s.panels,
-            [panelId]: { ...s.panels[panelId]!, data, rawData: cachedResults[0] ?? null, loading: false, error: null },
+            [panelId]: { ...s.panels[panelId]!, data, rawData: raw, loading: false, error: null },
           },
         }))
         emit({ type: 'panel-data', panelId, data })
@@ -492,25 +475,21 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }))
       emit({ type: 'panel-loading', panelId })
 
-      // Run targets in parallel
       const results = await Promise.all(
-        activeTargets.map(async (target) => {
-          // The library only reads datasource uid. All other fields belong to the plugin.
-          const uid = resolveTargetDsUid(target, panelDsUid)
-          if (!uid) throw new Error(`panel "${panelId}" target "${target.refId}" has no datasource`)
-
-          // Direct uid lookup — no datasources[] registry needed in dashboard JSON
+        activeDatasources.map(async (datasource) => {
+          const uid = datasource.uid
           const dsDef = dsMap.get(uid)
           if (!dsDef) throw new Error(`datasource "${uid}" not registered in engine`)
 
-          const key = cacheKey(uid, JSON.stringify(target), tr)
+          const key = cacheKey(uid, JSON.stringify(datasource), tr)
 
-          // Delegate full target to the plugin. Interpolation is also the plugin's responsibility.
           const result = await dsDef.query({
-            target: target as Record<string, unknown>,
+            datasource,
             dashboardId: cfg.id,
             panelId,
-            refId: target.refId,
+            requestId: datasource.id,
+            ...(datasource.query !== undefined ? { query: datasource.query } : {}),
+            requestOptions: datasource.options,
             variables: flatVars,
             datasourceOptions: dsDef.options ?? ({} as never),
             authContext: store.getState().authContext,
@@ -518,19 +497,18 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           })
 
           cache.set(key, { data: result, ts: Date.now() })
-          return { ...result, refId: target.refId }
+          return { ...result, requestId: datasource.id }
         }),
       )
 
       const panelDef = panelMap.get(pcfg.type)
-      // Pass QueryResult for single target, QueryResult[] for multiple
-      const raw = results.length === 1 ? results[0]! : (results as unknown as QueryResult)
+      const raw = results.length === 1 ? results[0]! : results
       const data = panelDef?.transform ? panelDef.transform(raw) : results
 
       store.setState((s) => ({
         panels: {
           ...s.panels,
-          [panelId]: { ...s.panels[panelId]!, data, rawData: results[0] ?? null, loading: false, error: null },
+          [panelId]: { ...s.panels[panelId]!, data, rawData: raw, loading: false, error: null },
         },
       }))
       emit({ type: 'panel-data', panelId, data })

@@ -142,7 +142,7 @@ export function useVariable(engine: CoreEngineAPI, name: string): UseVariableRes
 
 export interface UsePanelResult<TData = unknown> {
   data: TData
-  rawData: import('./types').QueryResult | null
+  rawData: import('./types').QueryResult | import('./types').QueryResult[] | null
   loading: boolean
   error: string | null
   /** Panel DOM ref — attach to the panel root element to enable viewport virtualization */

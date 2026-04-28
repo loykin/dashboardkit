@@ -6,7 +6,7 @@ A headless dashboard orchestration engine inspired by Grafana — pure TypeScrip
 
 - **Headless** — No styles included. You own the layout and panel UI
 - **Plugin-based** — Register Datasource, Panel, and VariableType plugins to extend functionality
-- **Grafana-style schema** — Familiar structures: `gridPos`, `targets[]`, `fieldConfig`
+- **Structured datasource requests** — Each panel declares `datasources[]` entries with location, query, and options together
 - **Variable interpolation** — `$varName` / `${varName}` syntax with DAG-based dependency ordering
 - **Query caching** — Per-panel result cache; automatically invalidated on time range or variable change
 - **Authorization hook** — Block datasource queries before the plugin sends anything to the backend
@@ -35,11 +35,11 @@ import { DashboardGrid, useDashboard, usePanel } from '@dashboard-engine/core/re
 const myDs = defineDatasource({
   uid: 'my-api',
   options: { baseUrl: 'https://api.example.com' },
-  async query({ dashboardId, panelId, refId, variables, timeRange, datasourceOptions }) {
+  async query({ dashboardId, panelId, requestId, query, variables, timeRange, datasourceOptions }) {
     const res = await fetch(`${datasourceOptions.baseUrl}/dashboards/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ dashboardId, panelId, refId, variables, timeRange }),
+      body: JSON.stringify({ dashboardId, panelId, requestId, query, variables, timeRange }),
     })
     return res.json()
   },
@@ -83,10 +83,13 @@ const config = {
       title: 'Users',
       type: 'table',
       gridPos: { x: 0, y: 0, w: 12, h: 8 },
-      targets: [
+      datasources: [
         {
-          refId: 'A',
-          datasource: { uid: 'my-api', type: 'mock' },
+          id: 'main',
+          uid: 'my-api',
+          type: 'backend',
+          query: 'users.list',
+          options: {},
         },
       ],
     },
@@ -126,7 +129,7 @@ Dashboard App (user code)
 │
 ├── DashboardConfig          ← JSON-serializable schema (Zod-validated)
 │   ├── panels[].gridPos     ← Layout position (Grafana gridPos style)
-│   ├── panels[].targets[]   ← Query targets (extended by datasource plugins)
+│   ├── panels[].datasources[] ← Data requests with datasource + query + options
 │   └── variables[]          ← Variable configuration
 │
 ├── createDashboardEngine()  ← Engine instance factory
@@ -152,7 +155,7 @@ Dashboard App (user code)
 
 | Concern | Library | Plugin / App |
 |---------|---------|--------------|
-| Target fields | `refId`, `datasource`, `hide` | All other fields (`query`, `expr`, `rawSql`, …) |
+| Panel data requests | `id`, `uid`, `type`, `query`, `options`, `hide` | Query semantics and options |
 | Variable interpolation | `$var` token parsing, DAG ordering | Actual interpolation (via `interpolate()` utility) |
 | Data transformation | `QueryResult` type definition | `PanelPluginDef.transform()` |
 | Styling | None | You decide |
@@ -217,7 +220,7 @@ engine.setRefresh('30s')
 
 ```ts
 interface DatasourcePluginDef<TOptions> {
-  uid: string                      // Matches target.datasource.uid in config
+  uid: string                      // Matches panel.datasources[].uid in config
   options?: TOptions               // Infrastructure config (URL, auth, etc.)
   query(options: QueryOptions<TOptions>): Promise<QueryResult>
   metricFindQuery?(query, vars): Promise<VariableOption[]>
@@ -228,10 +231,12 @@ interface DatasourcePluginDef<TOptions> {
 
 ```ts
 interface QueryOptions<TOptions> {
-  target: Record<string, unknown>  // Plugin-defined query fields (passthrough)
+  datasource: PanelDataSourceConfig
   dashboardId: string
   panelId: string
-  refId: string
+  requestId: string
+  query?: string | string[] | Record<string, unknown>
+  requestOptions: Record<string, unknown>
   variables: Record<string, string | string[]>
   datasourceOptions: TOptions
   authContext?: AuthContext
@@ -241,7 +246,7 @@ interface QueryOptions<TOptions> {
 ```
 
 For secure dashboards, keep executable query text out of the browser config. Use
-`dashboardId`, `panelId`, `refId`, `variables`, and `timeRange` as the backend
+`dashboardId`, `panelId`, `requestId`, `variables`, and `timeRange` as the backend
 request payload, then build SQL/PromQL/etc. on the backend after server-side
 authorization.
 
@@ -251,7 +256,7 @@ authorization.
 interface QueryResult {
   columns: string[]
   rows: unknown[][]
-  refId?: string
+  requestId?: string
   meta?: Record<string, unknown>
 }
 ```

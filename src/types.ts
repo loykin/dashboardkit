@@ -52,30 +52,24 @@ export const GridPosSchema = z.object({
   h: z.number().int().min(1),            // height (in rowHeight units)
 })
 
-// ─── Query Target ─────────────────────────────────────────────────────────────
-// [Extension Point #1 — Datasource Plugin]
-//
-// Only refId / datasource / hide are defined by the library.
-// All other fields are freely defined by the datasource plugin.
-//
-//   Prometheus:  { expr: "rate(...)", legendFormat: "{{method}}", interval: "1m" }
-//   ClickHouse:  { rawSql: "SELECT ...", format: "time_series" }
-//   Loki:        { expr: "{app=\"api\"}", queryType: "range" }
-//
-// TypeScript type safety is handled by the defineDatasource<TOptions, TQuery>() generic.
-// Zod validates only the common fields; the rest are passthrough.
-export const TargetSchema = z
+// ─── Panel Datasource Request ─────────────────────────────────────────────────
+// One panel can request data from one or more datasources. Each entry keeps the
+// datasource location, query descriptor, and request-local options together.
+export const PanelDataSourceSchema = z
   .object({
-    refId: z.string().min(1).default('A'),
-    // datasource reference — inherits panel.datasource or can be overridden per target
-    datasource: z.object({
-      uid: z.string().min(1),   // maps to datasources[].id
-      type: z.string().min(1),  // id of the defineDatasource definition
-    }).optional(),
+    id: z.string().min(1).default('main'),
+    uid: z.string().min(1),
+    type: z.string().min(1),
+    query: z.union([
+      z.string(),
+      z.array(z.string()),
+      z.record(z.unknown()),
+    ]).optional(),
+    options: z.record(z.unknown()).default({}),
     hide: z.boolean().default(false),
     permissions: z.array(PermissionRuleSchema).default([]),
   })
-  .passthrough()  // allows datasource plugin-specific fields (expr, rawSql, queryType, etc.)
+  .passthrough()
 
 // ─── Field Display Config (maps to Grafana fieldConfig) ─────────────────────────
 // [Extension Point #2 — Panel Plugin / Common]
@@ -128,16 +122,7 @@ export const PanelConfigSchema = z.object({
   gridPos: GridPosSchema,
 
   // ── Data ──
-  // datasource: panel-level default datasource — used when targets[].datasource is not set
-  // Same role as panel.datasource in Grafana
-  datasource: z.object({
-    uid: z.string().min(1),  // maps to datasources[].id
-    type: z.string().min(1), // id of the defineDatasource definition
-  }).optional(),
-
-  // targets[]: multiple queries per panel — useful for comparison graphs, calculated fields, etc.
-  // Distinguished by refId (A/B/C…) same as Grafana
-  targets: z.array(TargetSchema).default([]),
+  datasources: z.array(PanelDataSourceSchema).default([]),
 
   // ── Display ──
   fieldConfig: FieldConfigSchema.optional(),
@@ -209,7 +194,7 @@ export const DashboardConfigSchema = z.object({
 export type VariableConfig = z.infer<typeof VariableConfigSchema>
 export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
-export type Target = z.infer<typeof TargetSchema>
+export type PanelDataSourceConfig = z.infer<typeof PanelDataSourceSchema>
 export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
@@ -277,7 +262,7 @@ export interface AuthorizationRequest {
   authContext: AuthContext
   dashboard: DashboardConfig
   panel?: PanelConfig
-  target?: Target
+  datasource?: PanelDataSourceConfig
   variable?: VariableConfig
   datasourceUid?: string
   permissions: PermissionRule[]
@@ -286,21 +271,16 @@ export interface AuthorizationRequest {
 // ─── Query Execution Options ─────────────────────────────────────────────────
 // [Library / Plugin boundary]
 //
-// Provided by the library: refId, variables, timeRange, maxDataPoints
-// Owned by the plugin: target (including plugin-specific fields)
-//
-// The plugin extracts its own fields from target:
-//   Prometheus:  const { expr, legendFormat } = target as PrometheusTarget
-//   ClickHouse:  const { rawSql } = target as ClickHouseTarget
-//
-// Interpolation ($varName substitution) is also the plugin's responsibility.
-// The library only passes variables; it does not need to know the query string.
+// Provided by the library: dashboardId, panelId, requestId, variables, timeRange
+// Owned by the app/plugin/backend: query and datasource.options semantics.
 export interface QueryOptions<TOptions = Record<string, unknown>> {
-  /** Full target object — plugin extracts its own fields from here */
-  target: Record<string, unknown>
+  /** Full panel datasource request object */
+  datasource: PanelDataSourceConfig
   dashboardId: string
   panelId: string
-  refId: string
+  requestId: string
+  query?: string | string[] | Record<string, unknown>
+  requestOptions: Record<string, unknown>
   variables: Record<string, string | string[]>
   datasourceOptions: TOptions
   authContext?: AuthContext
@@ -312,7 +292,7 @@ export interface QueryOptions<TOptions = Record<string, unknown>> {
 export interface QueryResult {
   columns: Array<{ name: string; type: string }>
   rows: unknown[][]
-  refId?: string                         // identifies which target this response belongs to
+  requestId?: string
   meta?: Record<string, unknown>
 }
 
@@ -337,7 +317,7 @@ export interface VariableState {
 export interface PanelState {
   id: string
   data: unknown // result of definePanel.transform()
-  rawData: QueryResult | null
+  rawData: QueryResult | QueryResult[] | null
   loading: boolean
   error: string | null
   width: number

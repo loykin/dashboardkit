@@ -48,12 +48,10 @@ const CITIES: Record<string, string[]> = {
 
 const mockDs = defineDatasource({
   uid: 'mock',
-  async query({ target, variables }) {
-    // Plugin extracts its own fields from target directly
+  async query({ query: rawQuery = '', variables }) {
     // Interpolation is also the plugin's responsibility — substitute using variables from the library
     const { interpolate } = await import('@dashboard-engine/core')
-    const rawQuery = (target['query'] as string | undefined) ?? ''
-    const query = interpolate(rawQuery, { variables, builtins: {}, functions: {} })
+    const interpolatedQuery = interpolate(String(rawQuery), { variables, builtins: {}, functions: {} })
 
     await new Promise((r) => setTimeout(r, 300 + Math.random() * 200))
 
@@ -63,14 +61,14 @@ const mockDs = defineDatasource({
       city && city !== '' ? r.city === city : true,
     )
 
-    if (query.includes('DISTINCT country')) {
+    if (interpolatedQuery.includes('DISTINCT country')) {
       return {
         columns: [{ name: 'country', type: 'string' }],
         rows: ['KR', 'US', 'JP'].map((c) => [c]),
       }
     }
 
-    if (query.includes('FROM cities')) {
+    if (interpolatedQuery.includes('FROM cities')) {
       const cities = CITIES[country] ?? []
       return {
         columns: [{ name: 'city', type: 'string' }],
@@ -194,7 +192,7 @@ const config: DashboardInput = {
       type: 'stat',
       title: 'Total Sales — $country',
       gridPos: { x: 0, y: 0, w: 8, h: 3 },
-      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country'" }],
+      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country'" }],
       options: {},
     },
     {
@@ -202,7 +200,7 @@ const config: DashboardInput = {
       type: 'stat',
       title: '$city Sales',
       gridPos: { x: 8, y: 0, w: 8, h: 3 },
-      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
     {
@@ -210,7 +208,7 @@ const config: DashboardInput = {
       type: 'table',
       title: 'Sales Table',
       gridPos: { x: 0, y: 3, w: 24, h: 7 },
-      targets: [{ refId: 'A', hide: false, datasource: { uid: 'mock', type: 'mock' }, query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      datasources: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
       options: {},
     },
   ],

@@ -21,7 +21,7 @@ interface BackendLog {
   payload: {
     dashboardId: string
     panelId: string
-    refId: string
+    requestId: string
     variables: Record<string, string | string[]>
     timeRange?: { from: string; to: string }
   }
@@ -58,8 +58,7 @@ const config: DashboardInput = {
       type: 'secure-table',
       title: 'Sales By Country',
       gridPos: { x: 0, y: 0, w: 12, h: 6 },
-      datasource: { uid: 'backend-query-api', type: 'backend' },
-      targets: [{ refId: 'A' }],
+      datasources: [{ id: 'main', uid: 'backend-query-api', type: 'backend' }],
       options: {},
     },
   ],
@@ -92,7 +91,7 @@ export function AuthorizationTab() {
             payload: {
               dashboardId: options.dashboardId,
               panelId: options.panelId,
-              refId: options.refId,
+              requestId: options.requestId,
               variables: options.variables,
               ...(options.timeRange ? { timeRange: options.timeRange } : {}),
             },
@@ -209,7 +208,7 @@ export function AuthorizationTab() {
       <div className="rounded border border-gray-200 bg-white p-3">
         <div className="mb-2 text-xs font-semibold text-gray-700">Frontend Target</div>
         <pre className="overflow-auto rounded bg-gray-50 p-3 text-[11px] text-gray-700">
-          {JSON.stringify(config.panels[0]?.targets[0], null, 2)}
+          {JSON.stringify(config.panels[0]?.datasources[0], null, 2)}
         </pre>
       </div>
     </div>
