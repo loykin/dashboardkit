@@ -48,8 +48,8 @@ export interface PanelPluginDef<TOptions = Record<string, unknown>, TData = unkn
 
   // Transforms QueryResult into the shape consumed by the panel (defaults to QueryResult as-is)
   transform?: (result: QueryResult) => TData
-  // headless: no styles. Users apply their own styling.
-  component: React.ComponentType<PanelProps<TOptions, TData>>
+  // Optional adapter-owned component metadata. The headless core does not inspect it.
+  component?: (props: PanelProps<TOptions, TData>) => unknown
 }
 
 export function definePanel<TOptions = Record<string, unknown>, TData = unknown>(

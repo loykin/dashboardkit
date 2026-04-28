@@ -28,10 +28,8 @@ import {
   createDashboardEngine,
   defineDatasource,
   definePanel,
-  useDashboard,
-  usePanel,
-  DashboardGrid,
 } from '@dashboard-engine/core'
+import { DashboardGrid, useDashboard, usePanel } from '@dashboard-engine/core/react'
 
 // 1. Define plugins
 const myDs = defineDatasource({
@@ -136,13 +134,18 @@ Dashboard App (user code)
 │   ├── panels[]             ← PanelPluginDef
 │   └── variableTypes[]      ← VariableTypePluginDef
 │
-├── React Hooks              ← Provided by this library
+├── @dashboard-engine/core   ← Headless engine, schema, plugins, parser, state interface
+│
+├── @dashboard-engine/core/react
+│   ├── React Hooks
 │   ├── useDashboard()       ← Full state (variables, time range)
 │   ├── usePanel()           ← Panel data + loading state
 │   ├── useVariable()        ← Single variable subscription
-│   └── useEngineEvent()     ← Engine event subscription
+│   ├── useEngineEvent()     ← Engine event subscription
+│   └── DashboardGrid        ← react-grid-layout v2 wrapper
 │
-└── DashboardGrid            ← react-grid-layout v2 wrapper (drag & resize)
+└── @dashboard-engine/core/url-state
+    └── URL query params DashboardStateStore implementation
 ```
 
 ## Plugin Boundary
@@ -188,11 +191,14 @@ interface DashboardStateStore {
 }
 ```
 
-Use `createMemoryDashboardStateStore()` for local state,
-`createBrowserDashboardStateStore()` for URL query params, or provide a custom
-implementation backed by router state or another persistence mechanism.
+Use `createMemoryDashboardStateStore()` from `@dashboard-engine/core` for local
+state, `createBrowserDashboardStateStore()` from `@dashboard-engine/core/url-state`
+for URL query params, or provide a custom implementation backed by router state
+or another persistence mechanism.
 
 ```ts
+import { createBrowserDashboardStateStore } from '@dashboard-engine/core/url-state'
+
 const stateStore = createBrowserDashboardStateStore()
 
 const engine = createDashboardEngine({

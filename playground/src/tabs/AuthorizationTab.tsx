@@ -1,18 +1,18 @@
 import React from 'react'
 import {
   createDashboardEngine,
-  DashboardGrid,
   defineDatasource,
   definePanel,
 } from '@dashboard-engine/core'
+import { DashboardGrid } from '@dashboard-engine/core/react'
 import type {
   AuthContext,
   DashboardInput,
   PanelPluginDef,
-  PanelRenderProps,
   QueryOptions,
   QueryResult,
 } from '@dashboard-engine/core'
+import type { PanelRenderProps } from '@dashboard-engine/core/react'
 
 type Role = 'viewer' | 'editor'
 

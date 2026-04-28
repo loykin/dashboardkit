@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       // 소스에서 직접 임포트 — 빌드 없이 개발 가능
+      '@dashboard-engine/core/react': resolve(__dirname, '../src/react.ts'),
+      '@dashboard-engine/core/url-state': resolve(__dirname, '../src/url-state.ts'),
       '@dashboard-engine/core': resolve(__dirname, '../src/index.ts'),
     },
   },

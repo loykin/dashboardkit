@@ -1,19 +1,18 @@
 import React from 'react'
 import {
-  createBrowserDashboardStateStore,
   createDashboardEngine,
-  DashboardGrid,
   defineDatasource,
   definePanel,
   defineVariableType,
-  useVariable,
 } from '@dashboard-engine/core'
+import { createBrowserDashboardStateStore } from '@dashboard-engine/core/url-state'
+import { DashboardGrid, useVariable } from '@dashboard-engine/core/react'
 import type {
   DashboardInput,
   PanelPluginDef,
-  PanelRenderProps,
   QueryResult,
 } from '@dashboard-engine/core'
+import type { PanelRenderProps } from '@dashboard-engine/core/react'
 
 const countries = ['KR', 'US', 'JP']
 

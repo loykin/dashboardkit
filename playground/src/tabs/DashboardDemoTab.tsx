@@ -4,11 +4,14 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
+} from '@dashboard-engine/core'
+import {
   DashboardGrid,
   useDashboard,
   useVariable,
-} from '@dashboard-engine/core'
-import type { DashboardInput, QueryResult, PanelRenderProps, PanelPluginDef } from '@dashboard-engine/core'
+} from '@dashboard-engine/core/react'
+import type { DashboardInput, QueryResult, PanelPluginDef } from '@dashboard-engine/core'
+import type { PanelRenderProps } from '@dashboard-engine/core/react'
 
 // ─── Mock Datasource ───────────────────────────────────────────────────────────
 // In production, call the backend with fetch(). Here we return in-memory data.

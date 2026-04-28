@@ -4,11 +4,11 @@ import assert from 'node:assert/strict'
 import {
   createDashboardEngine,
   createMemoryDashboardStateStore,
-  createUrlDashboardStateStore,
   defineDatasource,
   definePanel,
   defineVariableType,
 } from '../dist/index.js'
+import { createUrlDashboardStateStore } from '../dist/url-state.js'
 import type { DashboardInput, QueryOptions } from '../dist/index.js'
 
 const panel = definePanel({
