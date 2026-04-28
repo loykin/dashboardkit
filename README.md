@@ -9,6 +9,7 @@ A headless dashboard orchestration engine inspired by Grafana — pure TypeScrip
 - **Grafana-style schema** — Familiar structures: `gridPos`, `targets[]`, `fieldConfig`
 - **Variable interpolation** — `$varName` / `${varName}` syntax with DAG-based dependency ordering
 - **Query caching** — Per-panel result cache; automatically invalidated on time range or variable change
+- **Authorization hook** — Block datasource queries before the plugin sends anything to the backend
 - **Viewport virtualization** — `usePanel` uses IntersectionObserver to skip off-screen panel queries
 - **Dual ESM + CJS** — Ships both `dist/index.js` (ESM) and `dist/index.cjs` (CJS)
 
@@ -36,9 +37,12 @@ import {
 const myDs = defineDatasource({
   uid: 'my-api',
   options: { baseUrl: 'https://api.example.com' },
-  async query({ target, variables, datasourceOptions }) {
-    const sql = target['query'] as string
-    const res = await fetch(`${datasourceOptions.baseUrl}/query?sql=${encodeURIComponent(sql)}`)
+  async query({ dashboardId, panelId, refId, variables, timeRange, datasourceOptions }) {
+    const res = await fetch(`${datasourceOptions.baseUrl}/dashboards/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dashboardId, panelId, refId, variables, timeRange }),
+    })
     return res.json()
   },
 })
@@ -56,12 +60,22 @@ const engine = createDashboardEngine({
   datasources: [myDs],
   panels: [TablePanel],
   variableTypes: [],
+  authContext: {
+    subject: { id: 'user-1', roles: ['viewer'] },
+  },
+  authorize({ action, authContext }) {
+    if (action === 'datasource:query' && authContext.subject?.roles?.includes('viewer')) {
+      return { allowed: false, reason: 'viewer cannot query this datasource' }
+    }
+    return true
+  },
 })
 
 // 3. Define dashboard config
 const config = {
   schemaVersion: 1 as const,
   title: 'My Dashboard',
+  id: 'my-dashboard',
   layout: { cols: 24, rowHeight: 30 },
   timeRange: { from: 'now-1h', to: 'now' },
   variables: [],
@@ -75,7 +89,6 @@ const config = {
         {
           refId: 'A',
           datasource: { uid: 'my-api', type: 'mock' },
-          query: 'SELECT * FROM users LIMIT 100',
         },
       ],
     },
@@ -151,6 +164,8 @@ Dashboard App (user code)
 | `panels` | `PanelPluginDef[]` | Panel plugin definitions |
 | `variableTypes` | `VariableTypePluginDef[]` | Variable type plugins |
 | `builtinVariables` | `BuiltinVariable[]?` | Override built-in variables |
+| `authContext` | `AuthContext?` | Current user/tenant context used by authorization |
+| `authorize` | `(request) => boolean \| AuthorizationDecision` | Called before datasource queries |
 
 ### `defineDatasource(def)`
 
@@ -168,13 +183,21 @@ interface DatasourcePluginDef<TOptions> {
 ```ts
 interface QueryOptions<TOptions> {
   target: Record<string, unknown>  // Plugin-defined query fields (passthrough)
+  dashboardId: string
+  panelId: string
   refId: string
   variables: Record<string, string | string[]>
   datasourceOptions: TOptions
+  authContext?: AuthContext
   timeRange?: { from: string; to: string }
   maxDataPoints?: number
 }
 ```
+
+For secure dashboards, keep executable query text out of the browser config. Use
+`dashboardId`, `panelId`, `refId`, `variables`, and `timeRange` as the backend
+request payload, then build SQL/PromQL/etc. on the backend after server-side
+authorization.
 
 ### `QueryResult`
 

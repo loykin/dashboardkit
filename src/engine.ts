@@ -11,6 +11,11 @@ import type {
   PanelState,
   QueryResult,
   EngineEvent,
+  AuthContext,
+  AuthorizationDecision,
+  AuthorizationRequest,
+  PermissionAction,
+  PermissionRule,
 } from './types'
 import { DashboardConfigSchema } from './types'
 import type {
@@ -28,6 +33,7 @@ interface EngineStore {
   variables: Record<string, VariableState>
   panels: Record<string, PanelState>
   timeRange: { from: string; to: string } | undefined
+  authContext: AuthContext
 }
 
 // ─── Query Cache ────────────────────────────────────────────────────────────────
@@ -40,7 +46,14 @@ interface CacheEntry {
 // ─── Engine Implementation ──────────────────────────────────────────────────────
 
 export function createDashboardEngine(options: CreateDashboardEngineOptions): CoreEngineAPI {
-  const { panels: panelDefs, datasources: dsDefs, variableTypes: vtDefs, builtinVariables = [] } =
+  const {
+    panels: panelDefs,
+    datasources: dsDefs,
+    variableTypes: vtDefs,
+    builtinVariables = [],
+    authContext = {},
+    authorize: customAuthorize,
+  } =
     options
 
   // Plugin maps — keyed by uid for direct lookup (target.datasource.uid → plugin)
@@ -61,6 +74,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     variables: {},
     panels: {},
     timeRange: undefined,
+    authContext,
   }))
 
   // Topologically sorted variable execution order
@@ -91,7 +105,65 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   function cacheKey(dsUid: string, targetJson: string, tr?: { from: string; to: string }): string {
-    return `${dsUid}::${targetJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+    const authKey = store.getState().authContext.subject?.id ?? 'anonymous'
+    return `${dsUid}::${authKey}::${targetJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+  }
+
+  function rulesForAction(rules: PermissionRule[], action: PermissionAction): PermissionRule[] {
+    return rules.filter((rule) => rule.action === action || rule.action === '*')
+  }
+
+  function intersects(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+    if (!left || left.length === 0) return true
+    if (!right || right.length === 0) return false
+    return left.some((value) => right.includes(value))
+  }
+
+  function ruleMatches(rule: PermissionRule, ctx: AuthContext): boolean {
+    const subject = ctx.subject
+    if (rule.subjects && (!subject?.id || !rule.subjects.includes(subject.id))) return false
+    if (!intersects(rule.roles, subject?.roles)) return false
+    return intersects(rule.groups, subject?.groups);
+
+  }
+
+  function defaultAuthorize(request: AuthorizationRequest): AuthorizationDecision {
+    const matchingRules = rulesForAction(request.permissions, request.action)
+    if (matchingRules.length === 0) return { allowed: true }
+
+    const matched = matchingRules.filter((rule) => ruleMatches(rule, request.authContext))
+    const deny = matched.find((rule) => rule.effect === 'deny')
+    if (deny) return { allowed: false, reason: deny.reason ?? 'authorization denied' }
+
+    const allow = matched.find((rule) => rule.effect === 'allow')
+    if (allow) return { allowed: true }
+
+    return { allowed: false, reason: 'authorization denied' }
+  }
+
+  async function authorize(request: Omit<AuthorizationRequest, 'authContext'>): Promise<AuthorizationDecision> {
+    const fullRequest: AuthorizationRequest = {
+      ...request,
+      authContext: store.getState().authContext,
+    }
+    const decision = customAuthorize
+      ? await customAuthorize(fullRequest)
+      : defaultAuthorize(fullRequest)
+    return typeof decision === 'boolean' ? { allowed: decision } : decision
+  }
+
+  async function ensureAuthorized(request: Omit<AuthorizationRequest, 'authContext'>): Promise<void> {
+    const decision = await authorize(request)
+    if (decision.allowed) return
+
+    const resourceId =
+      request.panel?.id ??
+      request.variable?.name ??
+      request.datasourceUid ??
+      request.dashboard.id
+    const reason = decision.reason ?? 'authorization denied'
+    emit({ type: 'authorization-denied', action: request.action, resourceId, reason })
+    throw new Error(reason)
   }
 
   // Extract datasource uid from target — the only target field the library knows
@@ -115,6 +187,31 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         }
       }
     }
+  }
+
+  async function ensureTargetQueryAuthorized(
+    cfg: DashboardConfig,
+    pcfg: import('./types').PanelConfig,
+    target: import('./types').Target,
+    datasourceUid: string,
+  ): Promise<void> {
+    const permissions = [...cfg.permissions, ...pcfg.permissions, ...target.permissions]
+    await ensureAuthorized({
+      action: 'panel:query',
+      dashboard: cfg,
+      panel: pcfg,
+      target,
+      datasourceUid,
+      permissions,
+    })
+    await ensureAuthorized({
+      action: 'datasource:query',
+      dashboard: cfg,
+      panel: pcfg,
+      target,
+      datasourceUid,
+      permissions,
+    })
   }
 
   // Panel IDs that reference a specific variable
@@ -163,6 +260,18 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         datasources: Object.fromEntries(dsMap2),
         builtins: buildCtxBuiltins(),
         variables: buildCtxVariables(),
+        dashboard: { id: cfg.id, title: cfg.title },
+        authContext: store.getState().authContext,
+      }
+
+      if (vcfg.datasourceId) {
+        await ensureAuthorized({
+          action: 'datasource:query',
+          dashboard: cfg,
+          variable: vcfg,
+          datasourceUid: vcfg.datasourceId,
+          permissions: [...cfg.permissions, ...vcfg.permissions],
+        })
       }
 
       const newOptions = await vtDef.resolve(vcfg, options as never, resolveCtx)
@@ -221,52 +330,57 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const activeTargets = pcfg.targets.filter((t) => !t.hide)
     if (activeTargets.length === 0) return
 
-    const tr = store.getState().timeRange
-    const flatVars = Object.fromEntries(
-      Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
-    )
-
-    const panelDsUid = pcfg.datasource?.uid
-
-    // Check cache (return immediately if all targets hit cache)
-    // Cache key = dsUid + raw target JSON (interpolation is the plugin's responsibility)
-    const cachedResults: QueryResult[] = []
-    let allCached = true
-    for (const target of activeTargets) {
-      const uid = resolveTargetDsUid(target, panelDsUid)
-      if (!uid) { allCached = false; break }
-      const key = cacheKey(uid, JSON.stringify(target), tr)
-      const cached = cache.get(key)
-      if (cached) {
-        cachedResults.push({ ...cached.data, refId: target.refId })
-      } else {
-        allCached = false
-        break
-      }
-    }
-
-    if (allCached) {
-      const panelDef = panelMap.get(pcfg.type)
-      const data = panelDef?.transform
-        ? panelDef.transform(cachedResults.length === 1 ? cachedResults[0]! : (cachedResults as unknown as QueryResult))
-        : cachedResults
-      store.setState((s) => ({
-        panels: {
-          ...s.panels,
-          [panelId]: { ...s.panels[panelId]!, data, rawData: cachedResults[0] ?? null, loading: false, error: null },
-        },
-      }))
-      emit({ type: 'panel-data', panelId, data })
-      return
-    }
-
-    // Set loading state
-    store.setState((s) => ({
-      panels: { ...s.panels, [panelId]: { ...s.panels[panelId]!, loading: true, error: null } },
-    }))
-    emit({ type: 'panel-loading', panelId })
-
     try {
+      const tr = store.getState().timeRange
+      const flatVars = Object.fromEntries(
+        Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
+      )
+
+      const panelDsUid = pcfg.datasource?.uid
+
+      for (const target of activeTargets) {
+        const uid = resolveTargetDsUid(target, panelDsUid)
+        if (!uid) continue
+        await ensureTargetQueryAuthorized(cfg, pcfg, target, uid)
+      }
+
+      // Check cache only after authorization, so denied users never receive stale data.
+      const cachedResults: QueryResult[] = []
+      let allCached = true
+      for (const target of activeTargets) {
+        const uid = resolveTargetDsUid(target, panelDsUid)
+        if (!uid) { allCached = false; break }
+        const key = cacheKey(uid, JSON.stringify(target), tr)
+        const cached = cache.get(key)
+        if (cached) {
+          cachedResults.push({ ...cached.data, refId: target.refId })
+        } else {
+          allCached = false
+          break
+        }
+      }
+
+      if (allCached) {
+        const panelDef = panelMap.get(pcfg.type)
+        const data = panelDef?.transform
+          ? panelDef.transform(cachedResults.length === 1 ? cachedResults[0]! : (cachedResults as unknown as QueryResult))
+          : cachedResults
+        store.setState((s) => ({
+          panels: {
+            ...s.panels,
+            [panelId]: { ...s.panels[panelId]!, data, rawData: cachedResults[0] ?? null, loading: false, error: null },
+          },
+        }))
+        emit({ type: 'panel-data', panelId, data })
+        return
+      }
+
+      // Set loading state
+      store.setState((s) => ({
+        panels: { ...s.panels, [panelId]: { ...s.panels[panelId]!, loading: true, error: null } },
+      }))
+      emit({ type: 'panel-loading', panelId })
+
       // Run targets in parallel
       const results = await Promise.all(
         activeTargets.map(async (target) => {
@@ -283,9 +397,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           // Delegate full target to the plugin. Interpolation is also the plugin's responsibility.
           const result = await dsDef.query({
             target: target as Record<string, unknown>,
+            dashboardId: cfg.id,
+            panelId,
             refId: target.refId,
             variables: flatVars,
             datasourceOptions: dsDef.options ?? ({} as never),
+            authContext: store.getState().authContext,
             ...(tr !== undefined ? { timeRange: tr } : {}),
           })
 
@@ -367,6 +484,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         variables: initVars,
         panels: initPanels,
         timeRange: parsed.timeRange ?? undefined,
+        authContext: store.getState().authContext,
       })
 
       cache.clear()
@@ -445,6 +563,16 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     getTimeRange() {
       return store.getState().timeRange
+    },
+
+    setAuthContext(context) {
+      store.setState({ authContext: context })
+      cache.clear()
+      void api.refreshVariables()
+    },
+
+    getAuthContext() {
+      return store.getState().authContext
     },
 
     subscribe(listener) {

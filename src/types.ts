@@ -17,6 +17,19 @@ export const DataSourceRefSchema = z.object({
   options: z.record(z.unknown()).default({}),
 })
 
+// ─── Permissions ─────────────────────────────────────────────────────────────
+// Headless authorization metadata. The engine can enforce these rules through
+// createDashboardEngine({ authContext, authorize }) before datasource queries.
+export const PermissionRuleSchema = z.object({
+  action: z.string().min(1),
+  effect: z.enum(['allow', 'deny']).default('allow'),
+  roles: z.array(z.string()).optional(),
+  groups: z.array(z.string()).optional(),
+  subjects: z.array(z.string()).optional(),
+  reason: z.string().optional(),
+  condition: z.record(z.unknown()).optional(),
+})
+
 // ─── Variable Config ──────────────────────────────────────────────────────────
 export const VariableConfigSchema = z.object({
   name: VariableNameSchema,
@@ -26,6 +39,7 @@ export const VariableConfigSchema = z.object({
   query: z.string().optional(),
   defaultValue: z.union([z.string(), z.array(z.string())]).nullable().default(null),
   multi: z.boolean().default(false),
+  permissions: z.array(PermissionRuleSchema).default([]),
   options: z.record(z.unknown()).default({}),
 })
 
@@ -59,6 +73,7 @@ export const TargetSchema = z
       type: z.string().min(1),  // id of the defineDatasource definition
     }).optional(),
     hide: z.boolean().default(false),
+    permissions: z.array(PermissionRuleSchema).default([]),
   })
   .passthrough()  // allows datasource plugin-specific fields (expr, rawSql, queryType, etc.)
 
@@ -135,6 +150,7 @@ export const PanelConfigSchema = z.object({
   // ── Misc ──
   transparent: z.boolean().default(false),
   links: z.array(PanelLinkSchema).default([]),
+  permissions: z.array(PermissionRuleSchema).default([]),
   options: z.record(z.unknown()).default({}),   // panel plugin-specific options
 })
 
@@ -184,10 +200,14 @@ export const DashboardConfigSchema = z.object({
 
   // dashboard-level links (top navigation, etc.)
   links: z.array(PanelLinkSchema).default([]),
+
+  // dashboard-level permission defaults
+  permissions: z.array(PermissionRuleSchema).default([]),
 })
 
 // ─── Inferred TypeScript Types ────────────────────────────────────────────────
 export type VariableConfig = z.infer<typeof VariableConfigSchema>
+export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
 export type Target = z.infer<typeof TargetSchema>
 export type FieldConfig = z.infer<typeof FieldConfigSchema>
@@ -198,6 +218,48 @@ export type PanelConfig = z.infer<typeof PanelConfigSchema>
 export type DashboardConfig = z.infer<typeof DashboardConfigSchema>
 // Input type (before parsing): fields with defaults are optional — use this when writing a config literal
 export type DashboardInput = z.input<typeof DashboardConfigSchema>
+
+export type PermissionEffect = 'allow' | 'deny'
+export type PermissionAction =
+  | 'dashboard:view'
+  | 'dashboard:edit'
+  | 'panel:view'
+  | 'panel:query'
+  | 'panel:edit'
+  | 'variable:view'
+  | 'variable:set'
+  | 'variable:query'
+  | 'datasource:query'
+  | (string & {})
+
+export interface AuthSubject {
+  id: string
+  roles?: string[]
+  groups?: string[]
+  attributes?: Record<string, unknown>
+}
+
+export interface AuthContext {
+  subject?: AuthSubject
+  tenantId?: string
+  attributes?: Record<string, unknown>
+}
+
+export interface AuthorizationDecision {
+  allowed: boolean
+  reason?: string
+}
+
+export interface AuthorizationRequest {
+  action: PermissionAction
+  authContext: AuthContext
+  dashboard: DashboardConfig
+  panel?: PanelConfig
+  target?: Target
+  variable?: VariableConfig
+  datasourceUid?: string
+  permissions: PermissionRule[]
+}
 
 // ─── Query Execution Options ─────────────────────────────────────────────────
 // [Library / Plugin boundary]
@@ -214,9 +276,12 @@ export type DashboardInput = z.input<typeof DashboardConfigSchema>
 export interface QueryOptions<TOptions = Record<string, unknown>> {
   /** Full target object — plugin extracts its own fields from here */
   target: Record<string, unknown>
+  dashboardId: string
+  panelId: string
   refId: string
   variables: Record<string, string | string[]>
   datasourceOptions: TOptions
+  authContext?: AuthContext
   timeRange?: { from: string; to: string }
   maxDataPoints?: number
 }
@@ -264,4 +329,5 @@ export type EngineEvent =
   | { type: 'panel-loading'; panelId: string }
   | { type: 'panel-data'; panelId: string; data: unknown }
   | { type: 'panel-error'; panelId: string; error: string }
+  | { type: 'authorization-denied'; action: PermissionAction; resourceId: string; reason: string }
   | { type: 'time-range-changed'; range: { from: string; to: string } }

@@ -20,6 +20,7 @@
     "build": "tsc --noEmit && eslint src --ext .ts,.tsx && tsup",
     "build:js": "tsup",
     "dev": "concurrently \"tsup --watch\" \"pnpm --filter playground dev\"",
+    "test": "pnpm build && node --test test/*.test.ts",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix"

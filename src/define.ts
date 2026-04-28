@@ -2,6 +2,11 @@ import type { VariableOption } from './types'
 import type { QueryOptions, QueryResult } from './types'
 import type { BuiltinContext, BuiltinVariable } from './builtins'
 import type { OptionSchema } from './options'
+import type {
+  AuthContext,
+  AuthorizationDecision,
+  AuthorizationRequest,
+} from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
 // uid: 1:1 mapping with target.datasource.uid in the dashboard JSON
@@ -58,6 +63,8 @@ export interface VariableResolveContext {
   datasources: Record<string, DatasourcePluginDef>
   builtins: Record<string, string>
   variables: Record<string, string | string[]>
+  dashboard: { id: string; title: string }
+  authContext?: AuthContext
 }
 
 export interface VariableTypePluginDef<TOptions = Record<string, unknown>> {
@@ -85,6 +92,10 @@ export interface CreateDashboardEngineOptions {
   datasources: DatasourcePluginDef[]
   variableTypes: VariableTypePluginDef[]
   builtinVariables?: BuiltinVariable[]
+  authContext?: AuthContext
+  authorize?: (
+    request: AuthorizationRequest,
+  ) => boolean | AuthorizationDecision | Promise<boolean | AuthorizationDecision>
 }
 
 // ─── CoreEngineAPI ─────────────────────────────────────────────────────────────
@@ -107,6 +118,10 @@ export interface CoreEngineAPI {
   // Time range
   setTimeRange(range: { from: string; to: string }): void
   getTimeRange(): { from: string; to: string } | undefined
+
+  // Authorization context
+  setAuthContext(context: AuthContext): void
+  getAuthContext(): AuthContext
 
   // Subscribe (returns unsubscribe function)
   subscribe(listener: (event: import('./types').EngineEvent) => void): () => void
