@@ -6,10 +6,12 @@ import { DagTab } from './tabs/DagTab'
 import { BuiltinsTab } from './tabs/BuiltinsTab'
 import { DashboardDemoTab } from './tabs/DashboardDemoTab'
 import { AuthorizationTab } from './tabs/AuthorizationTab'
+import { UrlStateTab } from './tabs/UrlStateTab'
 
 const TABS = [
   { id: 'dashboard', label: '🗂 Dashboard Demo', content: <DashboardDemoTab /> },
   { id: 'authorization', label: 'Authorization', content: <AuthorizationTab /> },
+  { id: 'url-state', label: 'URL State', content: <UrlStateTab /> },
   { id: 'parse-refs', label: 'parseRefs()', content: <ParseRefsTab /> },
   { id: 'interpolate', label: 'interpolate()', content: <InterpolateTab /> },
   { id: 'format', label: 'Format Specifiers', content: <FormatTab /> },

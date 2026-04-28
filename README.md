@@ -188,9 +188,24 @@ interface DashboardStateStore {
 }
 ```
 
-Use `createMemoryDashboardStateStore()` for local state, or provide a custom
-implementation backed by URL query params, router state, or another persistence
-mechanism.
+Use `createMemoryDashboardStateStore()` for local state,
+`createBrowserDashboardStateStore()` for URL query params, or provide a custom
+implementation backed by router state or another persistence mechanism.
+
+```ts
+const stateStore = createBrowserDashboardStateStore()
+
+const engine = createDashboardEngine({
+  stateStore,
+  datasources,
+  panels,
+  variableTypes,
+})
+
+engine.setVariable('country', 'KR')       // writes ?var-country=KR
+engine.setTimeRange({ from: 'now-1h', to: 'now' })
+engine.setRefresh('30s')
+```
 
 ### `defineDatasource(def)`
 

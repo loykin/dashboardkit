@@ -120,6 +120,8 @@ export interface CoreEngineAPI {
   // Time range
   setTimeRange(range: { from: string; to: string }): void
   getTimeRange(): { from: string; to: string } | undefined
+  setRefresh(refresh: string): void
+  getRefresh(): string | undefined
 
   // Authorization context
   setAuthContext(context: AuthContext): void

@@ -241,6 +241,25 @@ export interface DashboardStateStore {
   subscribe(listener: (snapshot: DashboardStateSnapshot) => void): () => void
 }
 
+export interface UrlDashboardStateStoreAdapter {
+  getSearch(): string
+  setSearch(search: string, options?: DashboardStateWriteOptions): void
+  subscribe?(listener: () => void): () => void
+}
+
+export interface UrlDashboardStateStoreOptions {
+  adapter: UrlDashboardStateStoreAdapter
+  variablePrefix?: string
+  fromParam?: string
+  toParam?: string
+  refreshParam?: string
+}
+
+export interface BrowserDashboardStateStoreOptions
+  extends Omit<UrlDashboardStateStoreOptions, 'adapter'> {
+  writeMode?: 'replace' | 'push'
+}
+
 export type PermissionEffect = 'allow' | 'deny'
 export type PermissionAction =
   | 'dashboard:view'
@@ -353,3 +372,4 @@ export type EngineEvent =
   | { type: 'panel-error'; panelId: string; error: string }
   | { type: 'authorization-denied'; action: PermissionAction; resourceId: string; reason: string }
   | { type: 'time-range-changed'; range: { from: string; to: string } }
+  | { type: 'refresh-changed'; refresh: string }

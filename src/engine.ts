@@ -35,6 +35,7 @@ interface EngineStore {
   variables: Record<string, VariableState>
   panels: Record<string, PanelState>
   timeRange: { from: string; to: string } | undefined
+  refresh: string | undefined
   authContext: AuthContext
 }
 
@@ -77,6 +78,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     variables: {},
     panels: {},
     timeRange: undefined,
+    refresh: undefined,
     authContext,
   }))
 
@@ -217,6 +219,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       return {
         variables,
         timeRange: snapshot.timeRange,
+        refresh: snapshot.refresh,
       }
     })
   }
@@ -240,10 +243,15 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const timeChanged =
       prev.timeRange?.from !== snapshot.timeRange?.from ||
       prev.timeRange?.to !== snapshot.timeRange?.to
+    const refreshChanged = prev.refresh !== snapshot.refresh
 
     for (const name of changedVars) {
       const value = snapshot.variables[name]
       if (value !== undefined) emit({ type: 'variable-changed', name, value })
+    }
+
+    if (refreshChanged && snapshot.refresh !== undefined) {
+      emit({ type: 'refresh-changed', refresh: snapshot.refresh })
     }
 
     if (timeChanged && snapshot.timeRange) {
@@ -598,6 +606,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         variables: initVars,
         panels: initPanels,
         timeRange: snapshot.timeRange,
+        refresh: snapshot.refresh,
         authContext: store.getState().authContext,
       })
 
@@ -651,6 +660,14 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     getTimeRange() {
       return stateStore.getSnapshot().timeRange
+    },
+
+    setRefresh(refresh) {
+      stateStore.setPatch({ refresh })
+    },
+
+    getRefresh() {
+      return stateStore.getSnapshot().refresh
     },
 
     setAuthContext(context) {

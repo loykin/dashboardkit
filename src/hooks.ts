@@ -10,6 +10,7 @@ interface EngineStore {
   variables: Record<string, VariableState>
   panels: Record<string, PanelState>
   timeRange: { from: string; to: string } | undefined
+  refresh: string | undefined
 }
 
 type EngineWithStore = CoreEngineAPI & {
@@ -26,8 +27,10 @@ function getStore(engine: CoreEngineAPI): StoreApi<EngineStore> {
 export interface UseDashboardResult {
   variables: Record<string, VariableState>
   timeRange: { from: string; to: string } | undefined
+  refresh: string | undefined
   setVariable: (name: string, value: string | string[]) => void
   setTimeRange: (range: { from: string; to: string }) => void
+  setRefresh: (refresh: string) => void
   refreshAll: () => Promise<void>
 }
 
@@ -63,12 +66,15 @@ export function useDashboard(engine: CoreEngineAPI, config: DashboardInput): Use
   )
 
   const refreshAll = useCallback(() => engine.refreshAll(), [engine])
+  const setRefresh = useCallback((refresh: string) => engine.setRefresh(refresh), [engine])
 
   return {
     variables: state.variables,
     timeRange: state.timeRange,
+    refresh: state.refresh,
     setVariable,
     setTimeRange,
+    setRefresh,
     refreshAll,
   }
 }
