@@ -38,6 +38,9 @@ export function createMemoryDashboardStateStore(
         snapshot = { variables: {} }
       }
 
+      // Patch semantics are intentional: dashboard state is canonical, but
+      // callers only mutate the keys they own. Unknown variables are preserved
+      // unless explicitly set to undefined or replace mode is requested.
       const nextVariables = options?.replace
         ? {}
         : { ...snapshot.variables }

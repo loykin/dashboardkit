@@ -264,6 +264,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   function buildDefaultStatePatch(cfg: DashboardConfig): import('./types').DashboardStatePatch {
     const snapshot = stateStore.getSnapshot()
     const variables: Record<string, string | string[] | undefined> = {}
+    // Initialize only variables declared by this dashboard. Do not prune
+    // unknown variables: URL/query state is app-owned and may contain values
+    // used by routers, auth flows, embedding, or another dashboard.
     for (const v of cfg.variables) {
       if (snapshot.variables[v.name] === undefined) {
         variables[v.name] = defaultVariableValue(v)
@@ -679,6 +682,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const prev = store.getState().variables[name]
       if (!prev) return
 
+      // Mutate only this dashboard variable. Other canonical URL/state keys are
+      // intentionally preserved by DashboardStateStore patch semantics.
       stateStore.setPatch({ variables: { [name]: value } })
     },
 

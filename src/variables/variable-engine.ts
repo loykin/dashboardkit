@@ -73,6 +73,19 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
   const store: StoreApi<Record<string, VariableState>> = createStore<Record<string, VariableState>>(() => ({}))
 
+  function configuredVariables(): Record<string, string | string[]> {
+    // The state store is the single source of truth, but the variable engine
+    // only owns variables declared by the loaded DashboardConfig. Unknown
+    // URL/state values are preserved in the store and excluded from query ctx.
+    const snapshot = options.stateStore.getSnapshot()
+    const names = new Set(variableConfigs.map((v) => v.name))
+    const variables: Record<string, string | string[]> = {}
+    for (const [name, value] of Object.entries(snapshot.variables)) {
+      if (names.has(name)) variables[name] = value
+    }
+    return variables
+  }
+
   function getDatasourceDef(request: DataRequestConfig): DatasourcePluginDef {
     const dsDef = dsMap.get(request.uid)
     if (!dsDef) throw new Error(`datasource "${request.uid}" not registered in engine`)
@@ -111,7 +124,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       const resolveCtx: VariableResolveContext = {
         datasourcePlugins: Object.fromEntries(dsMap),
         builtins: buildCtxBuiltins(snapshot.timeRange, dashboard, options.builtinVariables ?? []),
-        variables: { ...snapshot.variables },
+        variables: configuredVariables(),
         dashboard,
         authContext: options.getAuthContext(),
       }
@@ -207,7 +220,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
     },
 
     getVariables() {
-      return { ...options.stateStore.getSnapshot().variables }
+      return configuredVariables()
     },
 
     getBuiltins() {

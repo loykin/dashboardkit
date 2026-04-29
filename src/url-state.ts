@@ -91,6 +91,9 @@ function writeSnapshotToParams(
   snapshot: DashboardStateSnapshot,
   keys: UrlKeys,
 ) {
+  // Only dashboard-owned params are rewritten. Other app/router params, such as
+  // tab, auth handoff, or embed state, remain untouched because this is a
+  // headless adapter rather than the owner of the full URL.
   deleteDashboardParams(params, keys)
 
   for (const [name, value] of Object.entries(snapshot.variables)) {
@@ -117,6 +120,8 @@ function applyPatch(
   patch: DashboardStatePatch,
   options?: DashboardStateWriteOptions,
 ): DashboardStateSnapshot {
+  // Patch the dashboard slice only. Unknown variable keys remain part of the
+  // canonical URL/state until their owner removes them or replace mode is used.
   const variables = options?.replace ? {} : { ...snapshot.variables }
 
   if (patch.variables) {

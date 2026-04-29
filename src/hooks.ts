@@ -43,12 +43,12 @@ export interface UseDashboardResult {
 }
 
 export function useDashboard(engine: CoreEngineAPI, config: DashboardInput): UseDashboardResult {
-  const configLoadedRef = useRef(false)
+  const loadedConfigRef = useRef<DashboardInput | null>(null)
 
-  // Load only on first render
-  if (!configLoadedRef.current) {
+  // Load on first render and when the caller switches dashboard config.
+  if (loadedConfigRef.current !== config) {
     engine.load(config)
-    configLoadedRef.current = true
+    loadedConfigRef.current = config
   }
 
   const store = getStore(engine)

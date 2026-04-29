@@ -207,6 +207,9 @@ export interface DashboardStateSnapshot {
   refresh?: string
 }
 
+// Canonical dashboard input state. Adapters may be backed by URL query params,
+// router state, or another app-owned store. The engine must only read/write the
+// keys it owns and must preserve unknown app/query state.
 export interface DashboardStatePatch {
   variables?: Record<string, string | string[] | undefined>
   timeRange?: { from: string; to: string }

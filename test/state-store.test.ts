@@ -125,6 +125,95 @@ test('external state store changes drive datasource query variables', async () =
   assert.deepEqual(lastOptions?.variables, { country: 'US' })
 })
 
+test('unknown URL variables are preserved but never sent to datasource queries', async () => {
+  let lastOptions: QueryOptions | undefined
+  const stateStore = createMemoryDashboardStateStore({
+    variables: {
+      country: 'JP',
+      injected: 'DROP TABLE sales',
+    },
+  })
+  const engine = createDashboardEngine({
+    stateStore,
+    datasourcePlugins: [
+      defineDatasource({
+        uid: 'backend',
+        type: 'backend',
+        async query(options) {
+          lastOptions = options
+          return { columns: [], rows: [] }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+  })
+
+  engine.load(config())
+  await engine.refreshPanel('sales-table')
+
+  assert.deepEqual(stateStore.getSnapshot().variables, {
+    country: 'JP',
+    injected: 'DROP TABLE sales',
+  })
+  assert.deepEqual(lastOptions?.variables, { country: 'JP' })
+})
+
+test('unknown variables injected after load do not reach datasource queries', async () => {
+  let lastOptions: QueryOptions | undefined
+  const stateStore = createMemoryDashboardStateStore({ variables: { country: 'KR' } })
+  const engine = createDashboardEngine({
+    stateStore,
+    datasourcePlugins: [
+      defineDatasource({
+        uid: 'backend',
+        type: 'backend',
+        async query(options) {
+          lastOptions = options
+          return { columns: [], rows: [] }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+  })
+
+  engine.load(config())
+  stateStore.setPatch({ variables: { injected: 'SELECT * FROM secrets' } })
+  await engine.refreshPanel('sales-table')
+
+  assert.deepEqual(stateStore.getSnapshot().variables, {
+    country: 'KR',
+    injected: 'SELECT * FROM secrets',
+  })
+  assert.deepEqual(lastOptions?.variables, { country: 'KR' })
+})
+
+test('loading a different dashboard ignores stale variables without removing them from canonical state', async () => {
+  const stateStore = createMemoryDashboardStateStore({
+    variables: { country: 'US', city: 'newyork' },
+  })
+  const engine = createDashboardEngine({
+    stateStore,
+    datasourcePlugins: [
+      defineDatasource({
+        uid: 'backend',
+        type: 'backend',
+        async query() {
+          return { columns: [], rows: [] }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+  })
+
+  engine.load(config())
+
+  assert.deepEqual(stateStore.getSnapshot().variables, { country: 'US', city: 'newyork' })
+  assert.equal(engine.getVariable('city'), undefined)
+})
+
 test('url dashboard state store persists canonical state in query params', () => {
   let search = '?tab=dashboard&var-country=KR'
   const listeners = new Set<() => void>()
