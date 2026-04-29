@@ -48,6 +48,7 @@ export function DashboardGrid({
 }: DashboardGridProps) {
   // useDashboard — load config + subscribe to state
   useDashboard(engine, config)
+  const panelInstances = engine.getPanelInstances()
 
   // Auto-measure container width
   const containerRef = useRef<HTMLDivElement>(null)
@@ -65,9 +66,8 @@ export function DashboardGrid({
     return () => ro.disconnect()
   }, [width])
 
-  // Convert DashboardConfig → react-grid-layout Layout
-  // panel.gridPos holds position/size directly.
-  const layout: LayoutItem[] = config.panels.map((p) => ({
+  // Convert runtime panel instances → react-grid-layout Layout.
+  const layout: LayoutItem[] = panelInstances.map((p) => ({
     i: p.id,
     x: p.gridPos.x,
     y: p.gridPos.y,
@@ -93,7 +93,7 @@ export function DashboardGrid({
         resizeConfig={{ enabled: editable }}
         onLayoutChange={handleLayoutChange}
       >
-        {config.panels.map((p) => (
+        {panelInstances.map((p) => (
           <div key={p.id} style={{ height: '100%' }}>
             <PanelWrapper engine={engine} panelId={p.id} panelType={p.type}>
               {children}

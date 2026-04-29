@@ -322,6 +322,40 @@ export interface PanelState {
   active: boolean // whether the panel is in the viewport
 }
 
+// ─── Runtime Panel Instances ─────────────────────────────────────────────────
+// A dashboard stores PanelConfig entries, but the engine executes runtime
+// instances. Repeat and future expansion layers can turn one config into
+// multiple instances without mutating the saved dashboard JSON.
+export interface PanelRuntimeInstance {
+  id: string
+  originId: string
+  config: PanelConfig
+  type: string
+  title: string
+  gridPos: GridPos
+  variablesOverride?: Record<string, string | string[]>
+  repeat?: {
+    varName: string
+    value: string
+    index: number
+    direction: 'h' | 'v'
+  }
+  meta?: Record<string, unknown>
+}
+
+export interface PanelExpansionContext {
+  dashboard: DashboardConfig
+  variables: Record<string, string | string[]>
+}
+
+export interface PanelExpander {
+  id: string
+  expand(
+    instances: readonly PanelRuntimeInstance[],
+    ctx: PanelExpansionContext,
+  ): PanelRuntimeInstance[]
+}
+
 // ─── Engine Events ────────────────────────────────────────────────────────────
 export type EngineEvent =
   | { type: 'variable-changed'; name: string; value: string | string[] }

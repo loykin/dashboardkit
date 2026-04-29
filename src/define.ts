@@ -7,6 +7,8 @@ import type {
   AuthorizationDecision,
   AuthorizationRequest,
   DashboardStateStore,
+  PanelExpander,
+  PanelRuntimeInstance,
 } from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
@@ -92,6 +94,7 @@ export interface CreateDashboardEngineOptions {
   datasourcePlugins: DatasourcePluginDef[]
   variableTypes: VariableTypePluginDef[]
   builtinVariables?: BuiltinVariable[]
+  panelExpanders?: PanelExpander[]
   stateStore?: DashboardStateStore
   authContext?: AuthContext
   authorize?: (
@@ -113,6 +116,8 @@ export interface CoreEngineAPI {
 
   // Panels
   getPanel(panelId: string): import('./types').PanelState | undefined
+  getPanelInstances(): PanelRuntimeInstance[]
+  getPanelInstance(instanceId: string): PanelRuntimeInstance | undefined
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
 

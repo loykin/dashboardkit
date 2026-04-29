@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand/vanilla'
 import type { CoreEngineAPI } from './define'
-import type { DashboardConfig, DashboardInput, EngineEvent, PanelState, VariableState } from './types'
+import type {
+  DashboardConfig,
+  DashboardInput,
+  EngineEvent,
+  PanelRuntimeInstance,
+  PanelState,
+  VariableState,
+} from './types'
 
 // ─── Internal Store Access Helper ───────────────────────────────────────────────
 
@@ -9,6 +16,7 @@ interface EngineStore {
   config: DashboardConfig | null
   variables: Record<string, VariableState>
   panels: Record<string, PanelState>
+  panelInstances: PanelRuntimeInstance[]
   timeRange: { from: string; to: string } | undefined
   refresh: string | undefined
 }

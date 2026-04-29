@@ -18,6 +18,9 @@ import type {
   PermissionRule,
   DashboardStateSnapshot,
   DataRequestConfig,
+  PanelRuntimeInstance,
+  PanelExpander,
+  GridPos,
 } from './types'
 import { DashboardConfigSchema } from './types'
 import { createMemoryDashboardStateStore } from './state'
@@ -35,6 +38,7 @@ interface EngineStore {
   config: DashboardConfig | null
   variables: Record<string, VariableState>
   panels: Record<string, PanelState>
+  panelInstances: PanelRuntimeInstance[]
   timeRange: { from: string; to: string } | undefined
   refresh: string | undefined
   authContext: AuthContext
@@ -47,6 +51,65 @@ interface CacheEntry {
   ts: number
 }
 
+// ─── Built-in Panel Expansion ─────────────────────────────────────────────────
+
+function runtimePanelId(originId: string, index: number): string {
+  return index === 0 ? originId : `${originId}__repeat__${index}`
+}
+
+function repeatGridPos(origin: GridPos, index: number, direction: 'h' | 'v', cols: number): GridPos {
+  if (index === 0) return origin
+  if (direction === 'v') return { ...origin, y: origin.y + origin.h * index }
+
+  const rawX = origin.x + origin.w * index
+  const wraps = Math.floor(rawX / cols)
+  return {
+    ...origin,
+    x: rawX % cols,
+    y: origin.y + origin.h * wraps,
+  }
+}
+
+const repeatExpander: PanelExpander = {
+  id: 'repeat',
+  expand(input, ctx) {
+    const instances: PanelRuntimeInstance[] = []
+    const cols = ctx.dashboard.layout.cols
+
+    for (const base of input) {
+      const panel = base.config
+      if (!panel.repeat) {
+        instances.push(base)
+        continue
+      }
+
+      const raw = ctx.variables[panel.repeat]
+      const values = Array.isArray(raw) ? raw : raw ? [raw] : []
+
+      for (let i = 0; i < values.length; i += 1) {
+        const value = values[i]!
+        instances.push({
+          id: runtimePanelId(panel.id, i),
+          originId: panel.id,
+          config: panel,
+          type: panel.type,
+          title: panel.title,
+          gridPos: repeatGridPos(panel.gridPos, i, panel.repeatDirection, cols),
+          variablesOverride: { [panel.repeat]: value },
+          repeat: {
+            varName: panel.repeat,
+            value,
+            index: i,
+            direction: panel.repeatDirection,
+          },
+        })
+      }
+    }
+
+    return instances
+  },
+}
+
 // ─── Engine Implementation ──────────────────────────────────────────────────────
 
 export function createDashboardEngine(options: CreateDashboardEngineOptions): CoreEngineAPI {
@@ -55,6 +118,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     datasourcePlugins: dsDefs,
     variableTypes: vtDefs,
     builtinVariables = [],
+    panelExpanders: customPanelExpanders = [],
     stateStore = createMemoryDashboardStateStore(),
     authContext = {},
     authorize: customAuthorize,
@@ -68,6 +132,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   // Query cache: `dsId::interpolatedQuery::from::to` → QueryResult
   const cache = new Map<string, CacheEntry>()
+  const panelExpanders: PanelExpander[] = [repeatExpander, ...customPanelExpanders]
 
   // Event listeners
   const listeners = new Set<(e: EngineEvent) => void>()
@@ -78,6 +143,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     config: null,
     variables: {},
     panels: {},
+    panelInstances: [],
     timeRange: undefined,
     refresh: undefined,
     authContext,
@@ -107,9 +173,25 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return { ...stateStore.getSnapshot().variables }
   }
 
-  function cacheKey(dsUid: string, dataRequestJson: string, tr?: { from: string; to: string }): string {
+  function stableJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+    if (value && typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`)
+      return `{${entries.join(',')}}`
+    }
+    return JSON.stringify(value)
+  }
+
+  function cacheKey(
+    dsUid: string,
+    dataRequestJson: string,
+    variables: Record<string, string | string[]>,
+    tr?: { from: string; to: string },
+  ): string {
     const authKey = store.getState().authContext.subject?.id ?? 'anonymous'
-    return `${dsUid}::${authKey}::${dataRequestJson}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+    return `${dsUid}::${authKey}::${dataRequestJson}::${stableJson(variables)}::${tr?.from ?? ''}::${tr?.to ?? ''}`
   }
 
   function rulesForAction(rules: PermissionRule[], action: PermissionAction): PermissionRule[] {
@@ -214,6 +296,76 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
+  function buildBasePanelInstances(cfg: DashboardConfig): PanelRuntimeInstance[] {
+    return cfg.panels.map((panel) => ({
+      id: panel.id,
+      originId: panel.id,
+      config: panel,
+      type: panel.type,
+      title: panel.title,
+      gridPos: panel.gridPos,
+    }))
+  }
+
+  function buildPanelInstances(): PanelRuntimeInstance[] {
+    const cfg = store.getState().config
+    if (!cfg) return []
+
+    const ctx = {
+      dashboard: cfg,
+      variables: buildCtxVariables(),
+    }
+
+    return panelExpanders.reduce(
+      (instances, expander) => expander.expand(instances, ctx),
+      buildBasePanelInstances(cfg),
+    )
+  }
+
+  function defaultPanelState(id: string): PanelState {
+    return {
+      id,
+      data: null,
+      rawData: null,
+      loading: false,
+      error: null,
+      width: 0,
+      height: 0,
+      active: true,
+    }
+  }
+
+  function syncPanelInstances(): void {
+    const nextInstances = buildPanelInstances()
+    const nextIds = new Set(nextInstances.map((p) => p.id))
+
+    store.setState((s) => {
+      const panels = { ...s.panels }
+
+      for (const id of Object.keys(panels)) {
+        if (!nextIds.has(id)) delete panels[id]
+      }
+
+      for (const instance of nextInstances) {
+        panels[instance.id] ??= defaultPanelState(instance.id)
+      }
+
+      return { panelInstances: nextInstances, panels }
+    })
+  }
+
+  function findPanelInstance(instanceId: string): PanelRuntimeInstance | undefined {
+    return store.getState().panelInstances.find((instance) => instance.id === instanceId)
+  }
+
+  function panelRefsVar(instance: PanelRuntimeInstance, varName: string): boolean {
+    const panel = instance.config
+    const inTitle = panel.title ? parseRefs(panel.title).refs.includes(varName) : false
+    const inDataRequests = panel.dataRequests.some((request) => JSON.stringify(request).includes('$' + varName))
+    const isRepeatVar = panel.repeat === varName
+    return inTitle || inDataRequests || isRepeatVar
+  }
+
   function mirrorDashboardSnapshot(snapshot: DashboardStateSnapshot) {
     store.setState((s) => {
       const cfg = s.config
@@ -280,6 +432,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
       for (const name of downstream) await resolveOneVariable(name)
 
+      syncPanelInstances()
       const affected = [...new Set(changedVars.flatMap((name) => panelsReferencingVar(name)))]
       invalidatePanelCache(affected)
       await Promise.all(affected.map(executePanel))
@@ -291,10 +444,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   function invalidatePanelCache(panelIds: string[]) {
-    const cfg = store.getState().config
-    if (!cfg) return
     for (const pid of panelIds) {
-      const pcfg = cfg.panels.find((p) => p.id === pid)
+      const pcfg = findPanelInstance(pid)?.config ?? store.getState().config?.panels.find((p) => p.id === pid)
       if (!pcfg) continue
       for (const request of pcfg.dataRequests) {
         const uid = request.uid
@@ -331,15 +482,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   function panelsReferencingVar(varName: string): string[] {
-    const cfg = store.getState().config
-    if (!cfg) return []
-    return cfg.panels
-      .filter((p) => {
-        const inTitle = p.title ? parseRefs(p.title).refs.includes(varName) : false
-        const inDataRequests = p.dataRequests.some((request) => JSON.stringify(request).includes('$' + varName))
-        return inTitle || inDataRequests
-      })
-      .map((p) => p.id)
+    return store.getState().panelInstances
+      .filter((instance) => panelRefsVar(instance, varName))
+      .map((instance) => instance.id)
   }
 
   // ─── Variable Resolution ─────────────────────────────────────────────────────
@@ -391,14 +536,13 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       const newOptions = await vtDef.resolve(vcfg, options as never, resolveCtx)
 
-      // Reset to first option if current value is no longer in the option list
+      // The external dashboard state store is canonical. Keep an explicit
+      // current value even when the latest option list does not contain it.
       const cur = snapshotVarValue(stateStore.getSnapshot(), name)
-      const validValues = newOptions.map((o) => o.value)
       const curArr = Array.isArray(cur) ? cur : cur ? [cur] : []
-      const stillValid = curArr.every((v) => validValues.includes(v))
 
       let newValue: string | string[]
-      if (stillValid && curArr.length > 0) {
+      if (curArr.length > 0) {
         newValue = vcfg.multi ? curArr : curArr[0]!
       } else if (vcfg.defaultValue !== null && vcfg.defaultValue !== undefined) {
         newValue = vcfg.defaultValue
@@ -437,8 +581,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   async function executePanel(panelId: string): Promise<void> {
     const cfg = store.getState().config
     if (!cfg) return
-    const pcfg = cfg.panels.find((p) => p.id === panelId)
-    if (!pcfg) return
+    const instance = findPanelInstance(panelId)
+    if (!instance) return
+    const pcfg = instance.config
 
     const panel = store.getState().panels[panelId]
     if (!panel?.active) return // skip panels outside the viewport
@@ -448,8 +593,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     try {
       const tr = stateStore.getSnapshot().timeRange
+      const effectiveVariables = {
+        ...buildCtxVariables(),
+        ...(instance.variablesOverride ?? {}),
+      }
       const flatVars = Object.fromEntries(
-        Object.entries(buildCtxVariables()).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
+        Object.entries(effectiveVariables).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
       )
 
       for (const request of activeRequests) {
@@ -461,7 +610,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const cachedResults: QueryResult[] = []
       let allCached = true
       for (const request of activeRequests) {
-        const key = cacheKey(request.uid, JSON.stringify(request), tr)
+        const key = cacheKey(request.uid, JSON.stringify(request), flatVars, tr)
         const cached = cache.get(key)
         if (cached) {
           cachedResults.push({ ...cached.data, requestId: request.id })
@@ -497,7 +646,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           const uid = request.uid
           const dsDef = getDatasourceDef(request)
 
-          const key = cacheKey(uid, JSON.stringify(request), tr)
+          const key = cacheKey(uid, JSON.stringify(request), flatVars, tr)
 
           const result = await dsDef.query({
             dataRequest: request,
@@ -582,27 +731,20 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       // Initial panel state
       const initPanels: Record<string, PanelState> = {}
       for (const p of parsed.panels) {
-        initPanels[p.id] = {
-          id: p.id,
-          data: null,
-          rawData: null,
-          loading: false,
-          error: null,
-          width: 0,
-          height: 0,
-          active: true, // default true until IntersectionObserver is attached
-        }
+        initPanels[p.id] = defaultPanelState(p.id)
       }
 
       store.setState({
         config: parsed,
         variables: initVars,
         panels: initPanels,
+        panelInstances: [],
         timeRange: snapshot.timeRange,
         refresh: snapshot.refresh,
         authContext: store.getState().authContext,
       })
 
+      syncPanelInstances()
       cache.clear()
 
       // Kick off initial variable refresh
@@ -628,6 +770,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       for (const name of sortedVarNames) {
         await resolveOneVariable(name)
       }
+      syncPanelInstances()
       // Run all panels after variable refresh
       await api.refreshAll()
     },
@@ -636,15 +779,21 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       return store.getState().panels[panelId]
     },
 
+    getPanelInstances() {
+      return [...store.getState().panelInstances]
+    },
+
+    getPanelInstance(panelId) {
+      return findPanelInstance(panelId)
+    },
+
     async refreshPanel(panelId) {
       invalidatePanelCache([panelId])
       await executePanel(panelId)
     },
 
     async refreshAll() {
-      const cfg = store.getState().config
-      if (!cfg) return
-      await Promise.all(cfg.panels.map((p) => executePanel(p.id)))
+      await Promise.all(store.getState().panelInstances.map((p) => executePanel(p.id)))
     },
 
     setTimeRange(range) {

@@ -8,7 +8,6 @@ import {
 } from '@dashboard-engine/core'
 import {
   DashboardGrid,
-  useDashboard,
   useVariable,
 } from '@dashboard-engine/core/react'
 import type { DashboardInput, QueryResult, PanelPluginDef } from '@dashboard-engine/core'
@@ -58,8 +57,10 @@ const mockDs = defineDatasource({
 
     const country = (variables['country'] as string) ?? 'KR'
     const city = variables['city'] as string | undefined
+    const repeatCity = variables['repeatCity'] as string | undefined
+    const selectedCity = repeatCity || city
     const rows = (SALES_DATA[country] ?? []).filter((r) =>
-      city && city !== '' ? r.city === city : true,
+      selectedCity && selectedCity !== '' ? r.city === selectedCity : true,
     )
 
     if (interpolatedQuery.includes('DISTINCT country')) {
@@ -193,6 +194,20 @@ const config: DashboardInput = {
       multi: false,
       options: {},
     },
+    {
+      name: 'repeatCity',
+      type: 'query',
+      label: 'Repeat Cities',
+      dataRequest: {
+        id: 'options',
+        uid: 'mock',
+        type: 'mock',
+        query: "SELECT city FROM cities WHERE country = '$country'",
+      },
+      defaultValue: ['seoul', 'busan'],
+      multi: true,
+      options: {},
+    },
   ],
   panels: [
     {
@@ -215,8 +230,18 @@ const config: DashboardInput = {
       id: 'table-main',
       type: 'table',
       title: 'Sales Table',
-      gridPos: { x: 0, y: 3, w: 24, h: 7 },
+      gridPos: { x: 0, y: 6, w: 24, h: 7 },
       dataRequests: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$city'" }],
+      options: {},
+    },
+    {
+      id: 'stat-repeat-city',
+      type: 'stat',
+      title: '$repeatCity Sales',
+      repeat: 'repeatCity',
+      repeatDirection: 'h',
+      gridPos: { x: 0, y: 3, w: 8, h: 3 },
+      dataRequests: [{ id: 'main', uid: 'mock', type: 'mock', query: "SELECT * FROM sales WHERE country = '$country' AND city = '$repeatCity'" }],
       options: {},
     },
   ],
@@ -226,12 +251,12 @@ const config: DashboardInput = {
 // ─── Panel Renderer ───────────────────────────────────────────────────────────
 
 function PanelShell({ panelId, panelType, data, loading, error, ref }: PanelRenderProps) {
-  const pcfg = config.panels.find((p) => p.id === panelId)!
-  const { variables } = useDashboard(engine, config)
+  const instance = engine.getPanelInstance(panelId)
+  const pcfg = instance?.config ?? config.panels.find((p) => p.id === panelId)!
 
   // Substitute variables in title
   const title = (pcfg.title ?? '').replace(/\$(\w+)/g, (_, name) => {
-    const v = variables[name]?.value
+    const v = instance?.variablesOverride?.[name] ?? engine.getVariable(name)?.value
     return Array.isArray(v) ? v.join(', ') : (v as string) ?? `$${name}`
   })
 
@@ -309,11 +334,13 @@ function TableBody({ data }: { data: Record<string, unknown>[] | null }) {
 function VariableBar() {
   const country = useVariable(engine, 'country')
   const city = useVariable(engine, 'city')
+  const repeatCity = useVariable(engine, 'repeatCity')
 
   return (
     <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 border-b border-gray-200 text-xs">
       <VariableSelect label="Country" variable={country} />
       <VariableSelect label="City" variable={city} />
+      <VariableMultiSelect label="Repeat Cities" variable={repeatCity} />
     </div>
   )
 }
@@ -342,6 +369,50 @@ function VariableSelect({
             </option>
           ))}
         </select>
+      )}
+    </div>
+  )
+}
+
+function VariableMultiSelect({
+  label,
+  variable,
+}: {
+  label: string
+  variable: ReturnType<typeof useVariable>
+}) {
+  const selected = new Set(Array.isArray(variable.value) ? variable.value : variable.value ? [variable.value] : [])
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-gray-500 font-medium">{label}</span>
+      {variable.loading ? (
+        <span className="text-gray-400 animate-pulse">loading…</span>
+      ) : (
+        <div className="flex flex-wrap gap-1">
+          {variable.options.map((o) => {
+            const active = selected.has(o.value)
+            return (
+              <button
+                key={o.value}
+                type="button"
+                className={`rounded border px-2 py-1 text-xs transition-colors ${
+                  active
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-100'
+                }`}
+                onClick={() => {
+                  const next = new Set(selected)
+                  if (active) next.delete(o.value)
+                  else next.add(o.value)
+                  variable.setValue([...next])
+                }}
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
       )}
     </div>
   )
