@@ -1,9 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
-import { buildVariableDAG, CircularDependencyError } from './dag'
 import { parseRefs } from './parser'
-import { buildBuiltinMap } from './builtins'
-import type { BuiltinVariable, BuiltinContext } from './builtins'
 import type {
   DashboardConfig,
   DashboardInput,
@@ -17,7 +14,6 @@ import type {
   PermissionAction,
   PermissionRule,
   DashboardStateSnapshot,
-  DataRequestConfig,
   PanelRuntimeInstance,
   PanelExpander,
   GridPos,
@@ -27,10 +23,10 @@ import { createMemoryDashboardStateStore } from './state'
 import type {
   DatasourcePluginDef,
   PanelPluginDef,
-  VariableTypePluginDef,
   CoreEngineAPI,
   CreateDashboardEngineOptions,
 } from './define'
+import { createVariableEngine, defaultVariableValue, flattenVariables } from './variables'
 
 // ─── Internal Store Shape ───────────────────────────────────────────────────────
 
@@ -128,7 +124,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // Plugin maps — keyed by uid for direct lookup (panel.dataRequests[].uid → plugin)
   const dsMap = new Map<string, DatasourcePluginDef>(dsDefs.map((d) => [d.uid, d]))
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
-  const vtMap = new Map<string, VariableTypePluginDef>(vtDefs.map((v) => [v.id, v]))
 
   // Query cache: `dsId::interpolatedQuery::from::to` → QueryResult
   const cache = new Map<string, CacheEntry>()
@@ -149,28 +144,27 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     authContext,
   }))
 
-  // Topologically sorted variable execution order
-  let sortedVarNames: string[] = []
   let lastDashboardSnapshot: DashboardStateSnapshot = stateStore.getSnapshot()
   let suppressDashboardSnapshotEvents = false
 
+  const varEngine = createVariableEngine({
+    variableTypes: vtDefs,
+    datasourcePlugins: dsDefs,
+    builtinVariables,
+    stateStore,
+    getAuthContext: () => store.getState().authContext,
+    getDashboardConfig: () => store.getState().config,
+    authorizeVariableQuery: ensureVariableDataRequestAuthorized,
+  })
+
+  varEngine.subscribe(() => {
+    store.setState({ variables: varEngine.getState() })
+  })
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
-  function getBuiltinCtx(): BuiltinContext {
-    const tr = stateStore.getSnapshot().timeRange ?? { from: new Date().toISOString(), to: new Date().toISOString() }
-    const cfg = store.getState().config
-    return {
-      timeRange: tr,
-      dashboard: { id: cfg?.id ?? '', title: cfg?.title ?? '' },
-    }
-  }
-
-  function buildCtxBuiltins(): Record<string, string> {
-    return buildBuiltinMap(getBuiltinCtx(), builtinVariables as BuiltinVariable[])
-  }
-
   function buildCtxVariables(): Record<string, string | string[]> {
-    return { ...stateStore.getSnapshot().variables }
+    return varEngine.getVariables()
   }
 
   function stableJson(value: unknown): string {
@@ -258,20 +252,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return a === b
   }
 
-  function snapshotVarValue(snapshot: DashboardStateSnapshot, name: string): string | string[] | undefined {
-    return snapshot.variables[name]
-  }
-
-  function defaultVariableValue(v: import('./types').VariableConfig): string | string[] {
-    return v.defaultValue ?? (v.multi ? [] : '')
-  }
-
-  function requestRefs(request: DataRequestConfig | undefined): string[] {
-    if (!request?.query) return []
-    return parseRefs(JSON.stringify(request.query)).refs
-  }
-
-  function getDatasourceDef(request: DataRequestConfig): DatasourcePluginDef {
+  function getDatasourceDef(request: import('./types').DataRequestConfig): DatasourcePluginDef {
     const dsDef = dsMap.get(request.uid)
     if (!dsDef) throw new Error(`datasource "${request.uid}" not registered in engine`)
     if (dsDef.type !== request.type) {
@@ -421,19 +402,21 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
 
     if (changedVars.length > 0) {
-      const downstream = new Set<string>()
-      for (const changed of changedVars) {
-        const idx = sortedVarNames.indexOf(changed)
-        if (idx === -1) continue
-        for (const name of sortedVarNames.slice(idx + 1)) {
-          const vcfg = cfg.variables.find((v) => v.name === name)
-          if (requestRefs(vcfg?.dataRequest).includes(changed)) downstream.add(name)
-        }
+      suppressDashboardSnapshotEvents = true
+      let downstreamChanged: string[]
+      try {
+        downstreamChanged = await varEngine.refreshDownstream(changedVars)
+      } finally {
+        suppressDashboardSnapshotEvents = false
       }
-      for (const name of downstream) await resolveOneVariable(name)
 
       syncPanelInstances()
-      const affected = [...new Set(changedVars.flatMap((name) => panelsReferencingVar(name)))]
+      const affectedVars = [...new Set([...changedVars, ...downstreamChanged])]
+      for (const name of downstreamChanged) {
+        const value = stateStore.getSnapshot().variables[name]
+        if (value !== undefined) emit({ type: 'variable-changed', name, value })
+      }
+      const affected = [...new Set(affectedVars.flatMap((name) => panelsReferencingVar(name)))]
       invalidatePanelCache(affected)
       await Promise.all(affected.map(executePanel))
     }
@@ -459,7 +442,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   async function ensurePanelDataRequestAuthorized(
     cfg: DashboardConfig,
     pcfg: import('./types').PanelConfig,
-    dataRequest: DataRequestConfig,
+    dataRequest: import('./types').DataRequestConfig,
     datasourceUid: string,
   ): Promise<void> {
     const permissions = [...cfg.permissions, ...pcfg.permissions, ...dataRequest.permissions]
@@ -481,98 +464,34 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     })
   }
 
+  async function ensureVariableDataRequestAuthorized(
+    cfg: DashboardConfig,
+    vcfg: import('./types').VariableConfig,
+    dataRequest: import('./types').DataRequestConfig,
+  ): Promise<void> {
+    const permissions = [...cfg.permissions, ...vcfg.permissions, ...dataRequest.permissions]
+    await ensureAuthorized({
+      action: 'variable:query',
+      dashboard: cfg,
+      variable: vcfg,
+      dataRequest,
+      datasourceUid: dataRequest.uid,
+      permissions,
+    })
+    await ensureAuthorized({
+      action: 'datasource:query',
+      dashboard: cfg,
+      variable: vcfg,
+      dataRequest,
+      datasourceUid: dataRequest.uid,
+      permissions,
+    })
+  }
+
   function panelsReferencingVar(varName: string): string[] {
     return store.getState().panelInstances
       .filter((instance) => panelRefsVar(instance, varName))
       .map((instance) => instance.id)
-  }
-
-  // ─── Variable Resolution ─────────────────────────────────────────────────────
-
-  async function resolveOneVariable(name: string): Promise<void> {
-    const cfg = store.getState().config
-    if (!cfg) return
-    const vcfg = cfg.variables.find((v) => v.name === name)
-    if (!vcfg) return
-
-    const vtDef = vtMap.get(vcfg.type)
-    if (!vtDef) {
-      console.warn(`[dashboardkit] Unknown variable type: ${vcfg.type}`)
-      return
-    }
-
-    // Set loading state
-    store.setState((s) => ({
-      variables: {
-        ...s.variables,
-        [name]: { ...s.variables[name]!, loading: true, error: null },
-      },
-    }))
-
-    try {
-      const dsMap2 = new Map<string, DatasourcePluginDef>()
-      for (const [k, v] of dsMap) dsMap2.set(k, v)
-
-      const options = resolveOptions(vcfg.options, vtDef)
-      const resolveCtx = {
-        datasourcePlugins: Object.fromEntries(dsMap2),
-        builtins: buildCtxBuiltins(),
-        variables: buildCtxVariables(),
-        dashboard: { id: cfg.id, title: cfg.title },
-        authContext: store.getState().authContext,
-      }
-
-      if (vcfg.dataRequest) {
-        getDatasourceDef(vcfg.dataRequest)
-        await ensureAuthorized({
-          action: 'datasource:query',
-          dashboard: cfg,
-          variable: vcfg,
-          dataRequest: vcfg.dataRequest,
-          datasourceUid: vcfg.dataRequest.uid,
-          permissions: [...cfg.permissions, ...vcfg.permissions, ...vcfg.dataRequest.permissions],
-        })
-      }
-
-      const newOptions = await vtDef.resolve(vcfg, options as never, resolveCtx)
-
-      // The external dashboard state store is canonical. Keep an explicit
-      // current value even when the latest option list does not contain it.
-      const cur = snapshotVarValue(stateStore.getSnapshot(), name)
-      const curArr = Array.isArray(cur) ? cur : cur ? [cur] : []
-
-      let newValue: string | string[]
-      if (curArr.length > 0) {
-        newValue = vcfg.multi ? curArr : curArr[0]!
-      } else if (vcfg.defaultValue !== null && vcfg.defaultValue !== undefined) {
-        newValue = vcfg.defaultValue
-      } else {
-        newValue = vcfg.multi ? (newOptions[0] ? [newOptions[0].value] : []) : (newOptions[0]?.value ?? '')
-      }
-
-      store.setState((s) => ({
-        variables: {
-          ...s.variables,
-          [name]: { ...s.variables[name]!, options: newOptions, value: newValue, loading: false },
-        },
-      }))
-
-      if (!valuesEqual(cur, newValue)) {
-        stateStore.setPatch({ variables: { [name]: newValue } })
-      }
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e)
-      store.setState((s) => ({
-        variables: {
-          ...s.variables,
-          [name]: { ...s.variables[name]!, loading: false, error },
-        },
-      }))
-    }
-  }
-
-  function resolveOptions(raw: Record<string, unknown>, _def: VariableTypePluginDef): Record<string, unknown> {
-    return raw
   }
 
   // ─── Panel Query Execution ──────────────────────────────────────────────────
@@ -597,9 +516,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         ...buildCtxVariables(),
         ...(instance.variablesOverride ?? {}),
       }
-      const flatVars = Object.fromEntries(
-        Object.entries(effectiveVariables).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
-      )
+      const flatVars = flattenVariables(effectiveVariables)
 
       for (const request of activeRequests) {
         getDatasourceDef(request)
@@ -685,71 +602,70 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
+  async function refreshVariables({ emitChanges }: { emitChanges: boolean }): Promise<void> {
+    suppressDashboardSnapshotEvents = true
+    let changed: string[]
+    try {
+      changed = await varEngine.refresh()
+      syncPanelInstances()
+    } finally {
+      suppressDashboardSnapshotEvents = false
+    }
+
+    if (emitChanges) {
+      const snapshot = stateStore.getSnapshot()
+      for (const name of changed) {
+        const value = snapshot.variables[name]
+        if (value !== undefined) emit({ type: 'variable-changed', name, value })
+      }
+    }
+
+    await api.refreshAll()
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
-  const api: CoreEngineAPI = {
-    load(config: DashboardInput) {
-      const parsed = DashboardConfigSchema.parse(config)
-      // DAG topological sort — throws immediately on failure
-      try {
-        sortedVarNames = buildVariableDAG(
-          parsed.variables.map((v) => ({
-            name: v.name,
-            ...(v.dataRequest?.query !== undefined ? { query: JSON.stringify(v.dataRequest.query) } : {}),
-          })),
-        )
-      } catch (e) {
-        if (e instanceof CircularDependencyError) throw e
-        throw e
-      }
+	  const api: CoreEngineAPI = {
+	    load(config: DashboardInput) {
+	      const parsed = DashboardConfigSchema.parse(config)
+	      const defaultPatch = buildDefaultStatePatch(parsed)
+	      suppressDashboardSnapshotEvents = true
+	      if (Object.keys(defaultPatch).length > 0) {
+	        stateStore.setPatch(defaultPatch)
+	      }
+	      const snapshot = stateStore.getSnapshot()
+	      lastDashboardSnapshot = snapshot
 
-      const defaultPatch = buildDefaultStatePatch(parsed)
-      suppressDashboardSnapshotEvents = true
-      try {
-        if (Object.keys(defaultPatch).length > 0) {
-          stateStore.setPatch(defaultPatch)
-        }
-      } finally {
-        suppressDashboardSnapshotEvents = false
-      }
-      const snapshot = stateStore.getSnapshot()
-      lastDashboardSnapshot = snapshot
-
-      // Initial variable runtime state. Values mirror the canonical state store.
-      const initVars: Record<string, VariableState> = {}
-      for (const v of parsed.variables) {
-        initVars[v.name] = {
-          name: v.name,
-          type: v.type,
-          value: snapshot.variables[v.name] ?? defaultVariableValue(v),
-          options: [],
-          loading: false,
-          error: null,
-        }
-      }
-
-      // Initial panel state
-      const initPanels: Record<string, PanelState> = {}
-      for (const p of parsed.panels) {
+	      // Initial panel state
+	      const initPanels: Record<string, PanelState> = {}
+	      for (const p of parsed.panels) {
         initPanels[p.id] = defaultPanelState(p.id)
       }
 
-      store.setState({
-        config: parsed,
-        variables: initVars,
-        panels: initPanels,
-        panelInstances: [],
-        timeRange: snapshot.timeRange,
+	      store.setState({
+	        config: parsed,
+	        variables: {},
+	        panels: initPanels,
+	        panelInstances: [],
+	        timeRange: snapshot.timeRange,
         refresh: snapshot.refresh,
-        authContext: store.getState().authContext,
-      })
+	        authContext: store.getState().authContext,
+	      })
 
-      syncPanelInstances()
-      cache.clear()
+	      varEngine.load(parsed.variables)
+	      store.setState({ variables: varEngine.getState() })
+	      syncPanelInstances()
+	      cache.clear()
 
-      // Kick off initial variable refresh
-      void api.refreshVariables()
-    },
+	      // Kick off initial variable refresh
+	      void (async () => {
+	        try {
+	          await refreshVariables({ emitChanges: false })
+	        } finally {
+	          suppressDashboardSnapshotEvents = false
+	        }
+	      })()
+	    },
 
     getConfig() {
       return store.getState().config
@@ -766,14 +682,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       stateStore.setPatch({ variables: { [name]: value } })
     },
 
-    async refreshVariables() {
-      for (const name of sortedVarNames) {
-        await resolveOneVariable(name)
-      }
-      syncPanelInstances()
-      // Run all panels after variable refresh
-      await api.refreshAll()
-    },
+	    refreshVariables() {
+	      return refreshVariables({ emitChanges: true })
+	    },
 
     getPanel(panelId) {
       return store.getState().panels[panelId]
@@ -834,6 +745,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   const unsubscribeStateStore = stateStore.subscribe((snapshot) => {
     if (suppressDashboardSnapshotEvents) {
       lastDashboardSnapshot = snapshot
+      mirrorDashboardSnapshot(snapshot)
       return
     }
     void handleDashboardSnapshotChange(snapshot)

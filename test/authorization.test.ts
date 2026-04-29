@@ -181,3 +181,56 @@ test('panel data request ids must be unique within a panel', () => {
 
   assert.throws(() => engine.load(input), /panel data request ids must be unique within each panel/)
 })
+
+test('denied variable query does not resolve variable options', async () => {
+  let resolveCalls = 0
+  const queryVariableType = defineVariableType({
+    id: 'query',
+    name: 'Query',
+    optionsSchema: {},
+    async resolve() {
+      resolveCalls += 1
+      return [{ label: 'KR', value: 'KR' }]
+    },
+  })
+  const input = dashboardConfig()
+  input.variables = [
+    {
+      name: 'country',
+      type: 'query',
+      defaultValue: null,
+      dataRequest: {
+        id: 'options',
+        uid: 'backend',
+        type: 'backend',
+        query: 'SELECT DISTINCT country FROM sales',
+      },
+      options: {},
+    },
+  ]
+  const engine = createDashboardEngine({
+    datasourcePlugins: [
+      defineDatasource({
+        uid: 'backend',
+        type: 'backend',
+        async query() {
+          return { columns: [], rows: [] }
+        },
+      }),
+    ],
+    panels: [panel],
+    variableTypes: [queryVariableType],
+    authorize({ action }) {
+      if (action === 'variable:query') {
+        return { allowed: false, reason: 'cannot list variable options' }
+      }
+      return true
+    },
+  })
+
+  engine.load(input)
+  await engine.refreshVariables()
+
+  assert.equal(resolveCalls, 0)
+  assert.equal(engine.getVariable('country')?.error, 'cannot list variable options')
+})
