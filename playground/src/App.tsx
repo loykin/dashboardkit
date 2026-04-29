@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ParseRefsTab } from './tabs/ParseRefsTab'
 import { InterpolateTab } from './tabs/InterpolateTab'
 import { FormatTab } from './tabs/FormatTab'
@@ -21,9 +21,28 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
+function tabFromSearch(): TabId {
+  const tab = new URLSearchParams(window.location.search).get('tab')
+  return TABS.some((item) => item.id === tab) ? tab as TabId : 'dashboard'
+}
+
 export default function App() {
-  const [active, setActive] = useState<TabId>('dashboard')
+  const [active, setActive] = useState<TabId>(() => tabFromSearch())
   const current = TABS.find((t) => t.id === active)!
+
+  useEffect(() => {
+    const sync = () => setActive(tabFromSearch())
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
+  }, [])
+
+  function selectTab(tab: TabId) {
+    setActive(tab)
+    const params = new URLSearchParams(window.location.search)
+    params.set('tab', tab)
+    const search = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${search}`)
+  }
 
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans">
@@ -39,7 +58,7 @@ export default function App() {
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActive(tab.id)}
+              onClick={() => selectTab(tab.id)}
               className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
                 active === tab.id
                   ? 'border-blue-500 text-blue-600'

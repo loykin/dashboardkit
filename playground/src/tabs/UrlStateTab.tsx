@@ -71,6 +71,7 @@ const config: DashboardInput = {
 
 export function UrlStateTab() {
   const [search, setSearch] = React.useState(window.location.search)
+  const [lastQueryVars, setLastQueryVars] = React.useState<Record<string, string | string[]>>({})
 
   const engine = React.useMemo(() => {
     const stateStore = createBrowserDashboardStateStore()
@@ -78,6 +79,7 @@ export function UrlStateTab() {
       uid: 'url-state-backend',
       type: 'backend',
       async query({ variables, timeRange }) {
+        setLastQueryVars(variables)
         return {
           columns: [
             { name: 'country', type: 'string' },
@@ -101,7 +103,7 @@ export function UrlStateTab() {
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [staticVariableType],
     })
-  }, [])
+  }, [setLastQueryVars])
 
   React.useEffect(() => {
     const sync = () => setSearch(window.location.search)
@@ -127,6 +129,17 @@ export function UrlStateTab() {
         <pre className="overflow-auto rounded bg-gray-50 p-3 text-[11px] text-gray-700">
           {search || '(empty)'}
         </pre>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <StatePreview
+          title="Raw URL Dashboard Variables"
+          value={readUrlDashboardVariables(search)}
+        />
+        <StatePreview
+          title="Datasource Query Variables"
+          value={lastQueryVars}
+        />
       </div>
     </div>
   )
@@ -182,6 +195,19 @@ function UrlControls({
         >
           No Refresh
         </button>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(window.location.search)
+            params.set('var-ghost', 'secret-city')
+            params.set('auth-token', 'handoff-token')
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`)
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            void engine.refreshAll()
+          }}
+          className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800"
+        >
+          Inject Unknown Params
+        </button>
       </div>
       <button
         onClick={() => {
@@ -193,6 +219,38 @@ function UrlControls({
         Clear URL State
       </button>
       <span className="max-w-full truncate text-[11px] text-gray-400">{search || '(empty)'}</span>
+    </div>
+  )
+}
+
+function readUrlDashboardVariables(search: string): Record<string, string | string[]> {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  const names = new Set<string>()
+  params.forEach((_value, key) => {
+    if (key.startsWith('var-')) names.add(key.slice(4))
+  })
+
+  const variables: Record<string, string | string[]> = {}
+  for (const name of names) {
+    const values = params.getAll(`var-${name}`)
+    variables[name] = values.length === 1 ? values[0]! : values
+  }
+  return variables
+}
+
+function StatePreview({
+  title,
+  value,
+}: {
+  title: string
+  value: unknown
+}) {
+  return (
+    <div className="rounded border border-gray-200 bg-white p-3">
+      <div className="mb-2 text-xs font-semibold text-gray-700">{title}</div>
+      <pre className="min-h-24 overflow-auto rounded bg-gray-50 p-3 text-[11px] text-gray-700">
+        {JSON.stringify(value, null, 2)}
+      </pre>
     </div>
   )
 }
