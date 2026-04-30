@@ -286,6 +286,8 @@ export interface QueryOptions<TOptions = Record<string, unknown>> {
   authContext?: AuthContext
   timeRange?: { from: string; to: string }
   maxDataPoints?: number
+  /** AbortSignal — cancelled when a newer request supersedes this one */
+  signal?: AbortSignal
 }
 
 // ─── Query Response ─────────────────────────────────────────────────────────────

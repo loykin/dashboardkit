@@ -127,6 +127,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   // Query cache: `dsId::interpolatedQuery::from::to` → QueryResult
   const cache = new Map<string, CacheEntry>()
+  const panelAbortControllers = new Map<string, AbortController>()
   const panelExpanders: PanelExpander[] = [repeatExpander, ...customPanelExpanders]
 
   // Event listeners
@@ -261,6 +262,25 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return dsDef
   }
 
+  function abortPanelRequests(): void {
+    for (const ctrl of panelAbortControllers.values()) ctrl.abort()
+    panelAbortControllers.clear()
+  }
+
+  function isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError'
+  }
+
+  function isCurrentPanelRequest(panelId: string, controller: AbortController): boolean {
+    return panelAbortControllers.get(panelId) === controller && !controller.signal.aborted
+  }
+
+  function assertCurrentPanelRequest(panelId: string, controller: AbortController): void {
+    if (!isCurrentPanelRequest(panelId, controller)) {
+      throw Object.assign(new Error('AbortError'), { name: 'AbortError' })
+    }
+  }
+
   function buildDefaultStatePatch(cfg: DashboardConfig): import('./types').DashboardStatePatch {
     const snapshot = stateStore.getSnapshot()
     const variables: Record<string, string | string[] | undefined> = {}
@@ -327,7 +347,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const panels = { ...s.panels }
 
       for (const id of Object.keys(panels)) {
-        if (!nextIds.has(id)) delete panels[id]
+        if (!nextIds.has(id)) {
+          panelAbortControllers.get(id)?.abort()
+          panelAbortControllers.delete(id)
+          delete panels[id]
+        }
       }
 
       for (const instance of nextInstances) {
@@ -421,7 +445,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
       const affected = [...new Set(affectedVars.flatMap((name) => panelsReferencingVar(name)))]
       invalidatePanelCache(affected)
-      await Promise.all(affected.map(executePanel))
+      await Promise.all(affected.map((panelId) => executePanel(panelId)))
     }
 
     if (timeChanged) {
@@ -500,7 +524,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // ─── Panel Query Execution ──────────────────────────────────────────────────
   // Run each dataRequests[] entry in parallel, then pass all results to panelDef.transform.
 
-  async function executePanel(panelId: string): Promise<void> {
+  async function executePanel(panelId: string, options: { supersede?: boolean } = {}): Promise<void> {
     const cfg = store.getState().config
     if (!cfg) return
     const instance = findPanelInstance(panelId)
@@ -512,6 +536,15 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     const activeRequests = pcfg.dataRequests.filter((request) => !request.hide)
     if (activeRequests.length === 0) return
+
+    const existingController = panelAbortControllers.get(panelId)
+    if (existingController) {
+      if (options.supersede === false) return
+      existingController.abort()
+    }
+    const controller = new AbortController()
+    panelAbortControllers.set(panelId, controller)
+    const { signal } = controller
 
     try {
       const tr = stateStore.getSnapshot().timeRange
@@ -525,6 +558,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         getDatasourceDef(request)
         await ensurePanelDataRequestAuthorized(cfg, pcfg, request, request.uid)
       }
+      assertCurrentPanelRequest(panelId, controller)
 
       // Check cache only after authorization, so denied users never receive stale data.
       const cachedResults: QueryResult[] = []
@@ -541,6 +575,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
 
       if (allCached) {
+        assertCurrentPanelRequest(panelId, controller)
         const panelDef = panelMap.get(pcfg.type)
         const data = panelDef?.transform
           ? panelDef.transform(cachedResults)
@@ -579,13 +614,16 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
             datasourceOptions: dsDef.options ?? ({} as never),
             authContext: store.getState().authContext,
             ...(tr !== undefined ? { timeRange: tr } : {}),
+            signal,
           })
 
+          assertCurrentPanelRequest(panelId, controller)
           cache.set(key, { data: result, ts: Date.now() })
           return { ...result, requestId: request.id }
         }),
       )
 
+      assertCurrentPanelRequest(panelId, controller)
       const panelDef = panelMap.get(pcfg.type)
       const data = panelDef?.transform ? panelDef.transform(results) : results
 
@@ -597,15 +635,30 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }))
       emit({ type: 'panel-data', panelId, data })
     } catch (e) {
+      if (!isCurrentPanelRequest(panelId, controller) || isAbortError(e)) return
       const error = e instanceof Error ? e.message : String(e)
       store.setState((s) => ({
         panels: { ...s.panels, [panelId]: { ...s.panels[panelId]!, loading: false, error } },
       }))
       emit({ type: 'panel-error', panelId, error })
+    } finally {
+      if (panelAbortControllers.get(panelId) === controller) {
+        panelAbortControllers.delete(panelId)
+      }
     }
   }
 
-  async function refreshVariables({ emitChanges }: { emitChanges: boolean }): Promise<void> {
+  async function refreshAllPanels(options: { supersede?: boolean } = {}): Promise<void> {
+    await Promise.all(store.getState().panelInstances.map((p) => executePanel(p.id, options)))
+  }
+
+  async function refreshVariables({
+    emitChanges,
+    supersedePanels = true,
+  }: {
+    emitChanges: boolean
+    supersedePanels?: boolean
+  }): Promise<void> {
     suppressDashboardSnapshotEvents = true
     let changed: string[]
     try {
@@ -623,7 +676,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
     }
 
-    await api.refreshAll()
+    await refreshAllPanels({ supersede: supersedePanels })
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -632,6 +685,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 	    load(config: DashboardInput) {
 	      const parsed = DashboardConfigSchema.parse(config)
 	      const defaultPatch = buildDefaultStatePatch(parsed)
+	      abortPanelRequests()
 	      suppressDashboardSnapshotEvents = true
 	      if (Object.keys(defaultPatch).length > 0) {
 	        stateStore.setPatch(defaultPatch)
@@ -663,7 +717,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 	      // Kick off initial variable refresh
 	      void (async () => {
 	        try {
-	          await refreshVariables({ emitChanges: false })
+	          await refreshVariables({ emitChanges: false, supersedePanels: false })
 	        } finally {
 	          suppressDashboardSnapshotEvents = false
 	        }
@@ -709,7 +763,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     async refreshAll() {
-      await Promise.all(store.getState().panelInstances.map((p) => executePanel(p.id)))
+      await refreshAllPanels()
     },
 
     setTimeRange(range) {
@@ -747,7 +801,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // Expose Zustand store for external subscription (hooks)
   ;(api as CoreEngineAPI & { _store: StoreApi<EngineStore> })._store = store
 
-  const unsubscribeStateStore = stateStore.subscribe((snapshot) => {
+  ;(api as CoreEngineAPI & { _unsubscribeStateStore: () => void })._unsubscribeStateStore = stateStore.subscribe((snapshot) => {
     if (suppressDashboardSnapshotEvents) {
       lastDashboardSnapshot = snapshot
       mirrorDashboardSnapshot(snapshot)
@@ -755,8 +809,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
     void handleDashboardSnapshotChange(snapshot)
   })
-  ;(api as CoreEngineAPI & { _unsubscribeStateStore: () => void })._unsubscribeStateStore =
-    unsubscribeStateStore
 
   return api
 }
