@@ -21,7 +21,7 @@ export interface ParseResult {
 // This order ensures $__name is not accidentally matched by the $name rule.
 const BUILTIN_FUNC_RE = /\$__([a-zA-Z][a-zA-Z0-9]*)\(([^)]*)\)/g
 const BUILTIN_VAR_RE = /\$__([a-zA-Z][a-zA-Z0-9]*)/g
-const VAR_BRACED_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)(?::([a-zA-Z]+))?\}/g
+const VAR_BRACED_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)(?::([a-zA-Z]+))?}/g
 const VAR_PLAIN_RE = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g
 
 /**
@@ -151,6 +151,14 @@ export function interpolate(template: string, ctx: InterpolateContext): string {
   }
 
   return result
+}
+
+export function interpolateVariables(
+  template: string,
+  variables: Record<string, string | string[]>,
+  builtins: Record<string, string> = {},
+): string {
+  return interpolate(template, { variables, builtins, functions: {} })
 }
 
 // ─── Format Specifiers ──────────────────────────────────────────────────────────

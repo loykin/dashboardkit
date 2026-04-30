@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import GridLayout, { type LayoutItem } from 'react-grid-layout'
 import type { CoreEngineAPI } from './define'
-import type { DashboardInput } from './types'
+import type { DashboardInput, FieldConfig, PanelConfig, PanelRuntimeInstance, QueryResult } from './types'
 import { useDashboard, usePanel } from './hooks'
 // CSS must be imported by the consumer (e.g. playground):
 // import 'react-grid-layout/css/styles.css'
@@ -11,12 +11,20 @@ import { useDashboard, usePanel } from './hooks'
 export interface PanelRenderProps {
   panelId: string
   panelType: string
+  instance: PanelRuntimeInstance
+  config: PanelConfig
+  options: Record<string, unknown>
+  fieldConfig?: FieldConfig
   data: unknown
-  rawData: import('./types').QueryResult[] | null
+  rawData: QueryResult[] | null
   loading: boolean
   error: string | null
   /** Ref to attach to the panel root element (enables viewport virtualization) */
   ref: React.RefCallback<HTMLElement>
+  /** Alias for ref with a clearer runtime meaning. */
+  viewportRef: React.RefCallback<HTMLElement>
+  /** Alias for ref with a clearer measurement meaning. */
+  measureRef: React.RefCallback<HTMLElement>
 }
 
 export interface DashboardGridProps {
@@ -95,7 +103,7 @@ export function DashboardGrid({
       >
         {panelInstances.map((p) => (
           <div key={p.id} style={{ height: '100%' }}>
-            <PanelWrapper engine={engine} panelId={p.id} panelType={p.type}>
+            <PanelWrapper engine={engine} instance={p}>
               {children}
             </PanelWrapper>
           </div>
@@ -109,16 +117,30 @@ export function DashboardGrid({
 
 interface PanelWrapperProps {
   engine: CoreEngineAPI
-  panelId: string
-  panelType: string
+  instance: PanelRuntimeInstance
   children: (props: PanelRenderProps) => React.ReactNode
 }
 
-function PanelWrapper({ engine, panelId, panelType, children }: PanelWrapperProps) {
+function PanelWrapper({ engine, instance, children }: PanelWrapperProps) {
+  const panelId = instance.id
   const { data, rawData, loading, error, ref } = usePanel(engine, panelId)
   return (
     <>
-      {children({ panelId, panelType, data, rawData, loading, error, ref })}
+      {children({
+        panelId,
+        panelType: instance.type,
+        instance,
+        config: instance.config,
+        options: instance.config.options,
+        ...(instance.config.fieldConfig !== undefined ? { fieldConfig: instance.config.fieldConfig } : {}),
+        data,
+        rawData,
+        loading,
+        error,
+        ref,
+        viewportRef: ref,
+        measureRef: ref,
+      })}
     </>
   )
 }

@@ -8,6 +8,8 @@ import type {
   VariableConfig,
   VariableState,
   PanelState,
+  PanelDependencyInfo,
+  PanelReadiness,
   QueryResult,
   EngineEvent,
   AuthContext,
@@ -228,6 +230,27 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return inTitle || inDataRequests || panel.repeat === varName
   }
 
+  function getPanelDependenciesForInstance(instance: PanelRuntimeInstance): PanelDependencyInfo {
+    const direct = new Set<string>()
+    const panel = instance.config
+
+    if (panel.title) {
+      for (const ref of parseRefs(panel.title).refs) direct.add(ref)
+    }
+
+    for (const request of panel.dataRequests) {
+      if (request.query !== undefined) {
+        for (const ref of parseRefs(JSON.stringify(request.query)).refs) direct.add(ref)
+      }
+      for (const ref of parseRefs(JSON.stringify(request.options)).refs) direct.add(ref)
+    }
+
+    if (panel.repeat) direct.add(panel.repeat)
+
+    const directVariables = [...direct]
+    return { directVariables, requiredVariables: directVariables }
+  }
+
   function panelsReferencingVar(varName: string): string[] {
     return store.getState().panelInstances
       .filter((instance) => panelRefsVar(instance, varName))
@@ -348,6 +371,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   async function fetchPanelRequests(
     panelId: string,
     cfg: DashboardConfig,
+    instance: PanelRuntimeInstance,
     activeRequests: DataRequestConfig[],
     flatVars: Record<string, string | string[]>,
     tr: { from: string; to: string } | undefined,
@@ -370,6 +394,10 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           authContext: store.getState().authContext,
           ...(tr !== undefined ? { timeRange: tr } : {}),
           signal,
+          builtins: varEngine.getBuiltins(),
+          panel: instance.config,
+          panelOptions: instance.config.options,
+          panelInstance: instance,
         })
         assertCurrentPanelRequest(panelId, controller)
         cache.set(key, { data: result, ts: Date.now() })
@@ -417,7 +445,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }))
       emit({ type: 'panel-loading', panelId })
 
-      const results = await fetchPanelRequests(panelId, cfg, activeRequests, flatVars, tr, controller)
+      const results = await fetchPanelRequests(panelId, cfg, instance, activeRequests, flatVars, tr, controller)
 
       assertCurrentPanelRequest(panelId, controller)
       const panelDef = panelMap.get(pcfg.type)
@@ -563,9 +591,25 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     refreshVariables() { return refreshVariables({ emitChanges: true }) },
+    getVariableReadiness(names) { return varEngine.getVariableReadiness(names) },
     getPanel(panelId) { return store.getState().panels[panelId] },
     getPanelInstances() { return [...store.getState().panelInstances] },
     getPanelInstance(panelId) { return findPanelInstance(panelId) },
+    getPanelDependencies(panelId) {
+      const instance = findPanelInstance(panelId)
+      return instance ? getPanelDependenciesForInstance(instance) : null
+    },
+    getPanelReadiness(panelId): PanelReadiness | null {
+      const instance = findPanelInstance(panelId)
+      const dependencies = instance ? getPanelDependenciesForInstance(instance) : null
+      if (!dependencies) return null
+      const readiness = varEngine.getVariableReadiness(dependencies.requiredVariables)
+      return {
+        ready: readiness.ready,
+        waitingVariables: readiness.waiting,
+        variableErrors: readiness.errors,
+      }
+    },
 
     async refreshPanel(panelId) {
       invalidatePanelCache([panelId])

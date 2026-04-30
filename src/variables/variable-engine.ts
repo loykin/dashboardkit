@@ -10,6 +10,7 @@ import type {
   DataRequestConfig,
   VariableConfig,
   VariableOption,
+  VariableReadiness,
   VariableState,
 } from '../types'
 import type {
@@ -41,6 +42,7 @@ export interface VariableEngine {
   getVariables(): Record<string, string | string[]>
   getBuiltins(): Record<string, string>
   getState(): Record<string, VariableState>
+  getVariableReadiness(names: readonly string[]): VariableReadiness
   subscribe(listener: () => void): () => void
   getSortedNames(): string[]
 }
@@ -107,7 +109,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
     store.setState((s) => ({
       ...s,
-      [name]: { ...s[name]!, loading: true, error: null },
+      [name]: { ...s[name]!, loading: true, error: null, status: 'loading' },
     }))
 
     let changed = false
@@ -146,7 +148,14 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
       store.setState((s) => ({
         ...s,
-        [name]: { ...s[name]!, options: resolvedOptions, value: newValue, loading: false },
+        [name]: {
+          ...s[name]!,
+          options: resolvedOptions,
+          value: newValue,
+          loading: false,
+          error: null,
+          status: 'success',
+        },
       }))
 
       if (!valuesEqual(cur, newValue)) {
@@ -157,7 +166,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       const error = e instanceof Error ? e.message : String(e)
       store.setState((s) => ({
         ...s,
-        [name]: { ...s[name]!, loading: false, error },
+        [name]: { ...s[name]!, loading: false, error, status: 'error' },
       }))
     }
 
@@ -184,6 +193,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
           options: [],
           loading: false,
           error: null,
+          status: 'idle',
         }
       }
       store.setState(initState, true)
@@ -231,6 +241,35 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
     getState() {
       return store.getState()
+    },
+
+    getVariableReadiness(names) {
+      const state = store.getState()
+      const waiting: string[] = []
+      const errors: Record<string, string> = {}
+
+      for (const name of names) {
+        const variable = state[name]
+        if (!variable) {
+          waiting.push(name)
+          continue
+        }
+
+        if (variable.status === 'error' || variable.error) {
+          errors[name] = variable.error ?? 'variable resolution failed'
+          continue
+        }
+
+        if (variable.status !== 'success') {
+          waiting.push(name)
+        }
+      }
+
+      return {
+        ready: waiting.length === 0 && Object.keys(errors).length === 0,
+        waiting,
+        errors,
+      }
     },
 
     subscribe(listener) {

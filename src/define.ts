@@ -7,8 +7,11 @@ import type {
   AuthorizationDecision,
   AuthorizationRequest,
   DashboardStateStore,
+  PanelDependencyInfo,
   PanelExpander,
   PanelRuntimeInstance,
+  PanelReadiness,
+  VariableReadiness,
 } from './types'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
@@ -113,11 +116,14 @@ export interface CoreEngineAPI {
   getVariable(name: string): import('./types').VariableState | undefined
   setVariable(name: string, value: string | string[]): void
   refreshVariables(): Promise<void>
+  getVariableReadiness(names: readonly string[]): VariableReadiness
 
   // Panels
   getPanel(panelId: string): import('./types').PanelState | undefined
   getPanelInstances(): PanelRuntimeInstance[]
   getPanelInstance(instanceId: string): PanelRuntimeInstance | undefined
+  getPanelDependencies(panelId: string): PanelDependencyInfo | null
+  getPanelReadiness(panelId: string): PanelReadiness | null
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
 

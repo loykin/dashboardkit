@@ -288,6 +288,10 @@ export interface QueryOptions<TOptions = Record<string, unknown>> {
   maxDataPoints?: number
   /** AbortSignal — cancelled when a newer request supersedes this one */
   signal?: AbortSignal
+  builtins?: Record<string, string>
+  panel?: PanelConfig
+  panelOptions?: Record<string, unknown>
+  panelInstance?: PanelRuntimeInstance
 }
 
 // ─── Query Response ─────────────────────────────────────────────────────────────
@@ -306,6 +310,14 @@ export interface VariableOption {
 }
 
 // ─── Runtime Variable State (Zustand store) ──────────────────────────────────
+export type VariableRuntimeStatus = 'idle' | 'loading' | 'success' | 'error'
+
+export interface VariableReadiness {
+  ready: boolean
+  waiting: string[]
+  errors: Record<string, string>
+}
+
 export interface VariableState {
   name: string
   type: string
@@ -313,6 +325,7 @@ export interface VariableState {
   options: VariableOption[]
   loading: boolean
   error: string | null
+  status: VariableRuntimeStatus
 }
 
 // ─── Runtime Panel State (Zustand store) ─────────────────────────────────────
@@ -359,6 +372,17 @@ export interface PanelExpander {
     instances: readonly PanelRuntimeInstance[],
     ctx: PanelExpansionContext,
   ): PanelRuntimeInstance[]
+}
+
+export interface PanelDependencyInfo {
+  directVariables: string[]
+  requiredVariables: string[]
+}
+
+export interface PanelReadiness {
+  ready: boolean
+  waitingVariables: string[]
+  variableErrors: Record<string, string>
 }
 
 // ─── Engine Events ────────────────────────────────────────────────────────────

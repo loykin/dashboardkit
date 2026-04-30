@@ -109,6 +109,7 @@ export function useVariable(engine: CoreEngineAPI, name: string): UseVariableRes
       options: [],
       loading: false,
       error: null,
+      status: 'idle',
     },
   )
 
@@ -121,6 +122,7 @@ export function useVariable(engine: CoreEngineAPI, name: string): UseVariableRes
         options: [],
         loading: false,
         error: null,
+        status: 'idle',
       },
     )
 
