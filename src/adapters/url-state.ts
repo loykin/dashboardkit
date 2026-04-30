@@ -3,7 +3,7 @@ import type {
   DashboardStateSnapshot,
   DashboardStateStore,
   DashboardStateWriteOptions,
-} from './types'
+} from '../schema'
 
 export interface UrlDashboardStateStoreAdapter {
   getSearch(): string

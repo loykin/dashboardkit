@@ -1,4 +1,4 @@
-import type { DashboardConfig, GridPos, PanelExpander, PanelRuntimeInstance } from './types'
+import type { DashboardConfig, GridPos, PanelExpander, PanelRuntimeInstance } from '../schema'
 
 // ─── ID / position helpers ──────────────────────────────────────────────────────
 

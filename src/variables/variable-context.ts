@@ -1,5 +1,5 @@
-import { buildBuiltinMap } from '../builtins'
-import type { BuiltinVariable } from '../builtins'
+import { buildBuiltinMap } from './builtins'
+import type { BuiltinVariable } from './builtins'
 
 export function buildCtxBuiltins(
   timeRange: { from: string; to: string } | undefined,

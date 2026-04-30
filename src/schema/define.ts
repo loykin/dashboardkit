@@ -1,6 +1,6 @@
 import type { VariableOption } from './types'
 import type { QueryOptions, QueryResult } from './types'
-import type { BuiltinContext, BuiltinVariable } from './builtins'
+import type { BuiltinContext, BuiltinVariable } from '../variables'
 import type { OptionSchema } from './options'
 import type {
   AuthContext,

@@ -1,4 +1,4 @@
-import type { BuiltinFunction } from './builtins'
+import type { BuiltinFunction } from '../variables'
 
 // ─── Parser Output Types ────────────────────────────────────────────────────────
 

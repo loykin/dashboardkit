@@ -4,7 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     react: 'src/react.ts',
-    'url-state': 'src/url-state.ts',
+    'url-state': 'src/adapters/url-state.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

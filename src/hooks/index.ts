@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand/vanilla'
-import type { CoreEngineAPI } from './define'
+import type { CoreEngineAPI } from '../schema'
 import type {
   DashboardConfig,
   DashboardInput,
@@ -8,7 +8,7 @@ import type {
   PanelRuntimeInstance,
   PanelState,
   VariableState,
-} from './types'
+} from '../schema'
 
 // ─── Internal Store Access Helper ───────────────────────────────────────────────
 
@@ -152,7 +152,7 @@ export function useVariable(engine: CoreEngineAPI, name: string): UseVariableRes
 
 export interface UsePanelResult<TData = unknown> {
   data: TData
-  rawData: import('./types').QueryResult[] | null
+  rawData: import('../schema/types').QueryResult[] | null
   loading: boolean
   error: string | null
   /** Panel DOM ref — attach to the panel root element to enable viewport virtualization */

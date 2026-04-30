@@ -10,3 +10,5 @@ export {
   buildCtxBuiltins,
   flattenVariables,
 } from './variable-context'
+export * from './builtins'
+export * from './variable-types'

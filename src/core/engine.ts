@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
-import { parseRefs } from './parser'
+import { parseRefs } from '../query'
 import type {
   DashboardConfig,
   DashboardInput,
@@ -16,18 +16,18 @@ import type {
   DashboardStateSnapshot,
   PanelRuntimeInstance,
   PanelExpander,
-} from './types'
-import { DashboardConfigSchema } from './types'
+} from '../schema'
+import { DashboardConfigSchema } from '../schema'
 import { createMemoryDashboardStateStore } from './state'
 import type {
-  DatasourcePluginDef,
   PanelPluginDef,
   CoreEngineAPI,
   CreateDashboardEngineOptions,
-} from './define'
-import { createVariableEngine, defaultVariableValue, flattenVariables } from './variables'
+} from '../schema'
+import { createVariableEngine, defaultVariableValue, flattenVariables } from '../variables'
 import { createAuthorization } from './authorization'
-import { buildBasePanelInstances, buildPanelExpanders } from './panel-expansion'
+import { buildBasePanelInstances, buildPanelExpanders } from '../panels'
+import { createDatasourceRegistry } from '../datasources'
 
 // ─── Internal Store Shape ───────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     authorize: customAuthorize,
   } = options
 
-  const dsMap = new Map<string, DatasourcePluginDef>(dsDefs.map((d) => [d.uid, d]))
+  const datasourceRegistry = createDatasourceRegistry(dsDefs)
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
 
   const cache = new Map<string, CacheEntry>()
@@ -150,7 +150,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   async function ensurePanelDataRequestAuthorized(
     cfg: DashboardConfig,
-    pcfg: import('./types').PanelConfig,
+    pcfg: import('../schema/types').PanelConfig,
     dataRequest: DataRequestConfig,
     datasourceUid: string,
   ): Promise<void> {
@@ -167,17 +167,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const permissions = [...cfg.permissions, ...vcfg.permissions, ...dataRequest.permissions]
     await auth.ensureAuthorized({ action: 'variable:query', dashboard: cfg, variable: vcfg, dataRequest, datasourceUid: dataRequest.uid, permissions })
     await auth.ensureAuthorized({ action: 'datasource:query', dashboard: cfg, variable: vcfg, dataRequest, datasourceUid: dataRequest.uid, permissions })
-  }
-
-  // ─── Datasource lookup ────────────────────────────────────────────────────────
-
-  function getDatasourceDef(request: DataRequestConfig): DatasourcePluginDef {
-    const dsDef = dsMap.get(request.uid)
-    if (!dsDef) throw new Error(`datasource "${request.uid}" not registered in engine`)
-    if (dsDef.type !== request.type) {
-      throw new Error(`datasource "${request.uid}" type mismatch: expected "${request.type}", got "${dsDef.type}"`)
-    }
-    return dsDef
   }
 
   // ─── Panel instance helpers ───────────────────────────────────────────────────
@@ -286,7 +275,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return [...names].filter((name) => !valuesEqual(prev.variables[name], next.variables[name]))
   }
 
-  function buildDefaultStatePatch(cfg: DashboardConfig): import('./types').DashboardStatePatch {
+  function buildDefaultStatePatch(cfg: DashboardConfig): import('../schema/types').DashboardStatePatch {
     const snapshot = stateStore.getSnapshot()
     const variables: Record<string, string | string[] | undefined> = {}
     for (const v of cfg.variables) {
@@ -380,7 +369,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     const { signal } = controller
     return Promise.all(
       activeRequests.map(async (request) => {
-        const dsDef = getDatasourceDef(request)
+        const dsDef = datasourceRegistry.getForRequest(request)
         const key = cacheKey(request.uid, JSON.stringify(request), flatVars, tr)
         const result = await dsDef.query({
           dataRequest: request,
@@ -427,7 +416,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const { flatVars, tr } = buildPanelQueryContext(instance)
 
       for (const request of activeRequests) {
-        getDatasourceDef(request)
+        datasourceRegistry.getForRequest(request)
         await ensurePanelDataRequestAuthorized(cfg, pcfg, request, request.uid)
       }
       assertCurrentPanelRequest(panelId, controller)

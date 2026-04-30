@@ -4,7 +4,7 @@ import type {
   AuthorizationRequest,
   PermissionAction,
   PermissionRule,
-} from './types'
+} from '../schema'
 
 // ─── Pure policy helpers ────────────────────────────────────────────────────────
 

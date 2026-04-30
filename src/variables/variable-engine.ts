@@ -1,8 +1,8 @@
 import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
-import { buildVariableDAG } from '../dag'
-import { parseRefs } from '../parser'
-import type { BuiltinVariable } from '../builtins'
+import { buildVariableDAG } from '../query'
+import { parseRefs } from '../query'
+import type { BuiltinVariable } from './builtins'
 import type {
   AuthContext,
   DashboardConfig,
@@ -12,13 +12,14 @@ import type {
   VariableOption,
   VariableReadiness,
   VariableState,
-} from '../types'
+} from '../schema'
 import type {
   DatasourcePluginDef,
   VariableResolveContext,
   VariableTypePluginDef,
-} from '../define'
+} from '../schema'
 import { buildCtxBuiltins } from './variable-context'
+import { createDatasourceRegistry } from '../datasources'
 
 export interface VariableEngineOptions {
   variableTypes: VariableTypePluginDef[]
@@ -68,7 +69,7 @@ function requestRefs(request: DataRequestConfig | undefined): string[] {
 
 export function createVariableEngine(options: VariableEngineOptions): VariableEngine {
   const vtMap = new Map(options.variableTypes.map((v) => [v.id, v]))
-  const dsMap = new Map(options.datasourcePlugins.map((d) => [d.uid, d]))
+  const datasourceRegistry = createDatasourceRegistry(options.datasourcePlugins)
 
   let sortedVarNames: string[] = []
   let variableConfigs: VariableConfig[] = []
@@ -86,15 +87,6 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       if (names.has(name)) variables[name] = value
     }
     return variables
-  }
-
-  function getDatasourceDef(request: DataRequestConfig): DatasourcePluginDef {
-    const dsDef = dsMap.get(request.uid)
-    if (!dsDef) throw new Error(`datasource "${request.uid}" not registered in engine`)
-    if (dsDef.type !== request.type) {
-      throw new Error(`datasource "${request.uid}" type mismatch: expected "${request.type}", got "${dsDef.type}"`)
-    }
-    return dsDef
   }
 
   async function resolveOne(name: string): Promise<boolean> {
@@ -119,12 +111,12 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       const dashboard = cfg ? { id: cfg.id, title: cfg.title } : { id: '', title: '' }
 
       if (vcfg.dataRequest) {
-        getDatasourceDef(vcfg.dataRequest)
+        datasourceRegistry.getForRequest(vcfg.dataRequest)
         if (cfg) await options.authorizeVariableQuery?.(cfg, vcfg, vcfg.dataRequest)
       }
 
       const resolveCtx: VariableResolveContext = {
-        datasourcePlugins: Object.fromEntries(dsMap),
+        datasourcePlugins: datasourceRegistry.toRecord(),
         builtins: buildCtxBuiltins(snapshot.timeRange, dashboard, options.builtinVariables ?? []),
         variables: configuredVariables(),
         dashboard,

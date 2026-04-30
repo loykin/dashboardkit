@@ -1,5 +1,5 @@
-import { defineVariableType } from './define'
-import type { VariableOption } from './types'
+import { defineVariableType } from '../schema'
+import type { VariableOption } from '../schema'
 
 function valuesFromUnknown(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean)

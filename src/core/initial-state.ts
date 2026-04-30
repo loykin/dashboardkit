@@ -1,4 +1,4 @@
-import type { DashboardConfig, DashboardStateSnapshot } from './types'
+import type { DashboardConfig, DashboardStateSnapshot } from '../schema'
 
 export interface DashboardInitialStateSources {
   defaults?: Partial<DashboardStateSnapshot>

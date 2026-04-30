@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import GridLayout, { type LayoutItem } from 'react-grid-layout'
-import type { CoreEngineAPI } from './define'
-import type { DashboardInput, FieldConfig, PanelConfig, PanelRuntimeInstance, QueryResult } from './types'
-import { useDashboard, usePanel } from './hooks'
+import type { CoreEngineAPI } from '../schema'
+import type { DashboardInput, FieldConfig, PanelConfig, PanelRuntimeInstance, QueryResult } from '../schema'
+import { useDashboard, usePanel } from '../hooks'
 // CSS must be imported by the consumer (e.g. playground):
 // import 'react-grid-layout/css/styles.css'
 

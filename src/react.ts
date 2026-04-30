@@ -1,2 +1,2 @@
 export * from './hooks'
-export * from './DashboardGrid'
+export * from './panels/DashboardGrid'

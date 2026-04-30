@@ -3,7 +3,7 @@ import type {
   DashboardStateSnapshot,
   DashboardStateStore,
   DashboardStateWriteOptions,
-} from './types'
+} from '../schema'
 
 function cloneSnapshot(snapshot: DashboardStateSnapshot): DashboardStateSnapshot {
   return {
