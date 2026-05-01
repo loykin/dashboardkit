@@ -815,9 +815,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       store.setState((s) => ({
         config: s.config ? nextConfig : null,
       }))
-      emit({ type: 'config-changed', config: nextConfig })
 
       syncPanelInstances()
+      emit({ type: 'config-changed', config: nextConfig })
 
       const affectedIds = store.getState().panelInstances
         .filter((inst) => inst.originId === panelId)
@@ -931,7 +931,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       return { ...result, requestId: parsedRequest.id }
     },
 
-    validatePanelOptions(type, options) {
+    validatePanelOptions(type, options, validationOptions) {
       const panelDef = panelMap.get(type)
       if (!panelDef) {
         return {
@@ -939,7 +939,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           errors: [{ path: ['type'], message: `panel type "${type}" is not registered` }],
         }
       }
-      return validateOptionSchema(panelDef.optionsSchema, options)
+      return validateOptionSchema(panelDef.optionsSchema, options, [], validationOptions)
     },
 
     validateDataRequest(request) {

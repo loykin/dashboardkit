@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { StoreApi } from 'zustand/vanilla'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { CoreEngineAPI } from '../schema'
 import type {
   DashboardConfig,
   DashboardInput,
+  DashboardLoadOptions,
   EngineEvent,
   PanelInput,
   PanelPatchInput,
@@ -12,28 +12,42 @@ import type {
   VariableOption,
   VariableState,
 } from '../schema'
+import { getStore } from '../internal/store-access'
 
-// ─── Internal Store Access Helper ───────────────────────────────────────────────
-
-interface EngineStore {
-  config: DashboardConfig | null
-  variables: Record<string, VariableState>
-  panels: Record<string, PanelState>
-  panelInstances: PanelRuntimeInstance[]
-  timeRange: { from: string; to: string } | undefined
-  refresh: string | undefined
+function sameLoadOptions(
+  left: DashboardLoadOptions | undefined,
+  right: DashboardLoadOptions | undefined,
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  return left.statePolicy === right.statePolicy && left.state === right.state
 }
 
-type EngineWithStore = CoreEngineAPI & {
-  _store: StoreApi<EngineStore>
-}
+// ─── useLoadDashboard ───────────────────────────────────────────────────────────
+// Load external dashboard config into the engine (one-way boundary).
+// Call this at the app/router level. Does not subscribe to engine state.
 
-function getStore(engine: CoreEngineAPI): StoreApi<EngineStore> {
-  return (engine as EngineWithStore)._store
+export function useLoadDashboard(
+  engine: CoreEngineAPI,
+  config: DashboardInput,
+  loadOptions?: DashboardLoadOptions,
+): void {
+  const loadedConfigRef = useRef<DashboardInput | null>(null)
+  const loadOptionsRef = useRef<DashboardLoadOptions | undefined>(undefined)
+
+  useEffect(() => {
+    if (loadedConfigRef.current === config && sameLoadOptions(loadOptionsRef.current, loadOptions)) {
+      return
+    }
+    engine.load(config, loadOptions)
+    loadedConfigRef.current = config
+    loadOptionsRef.current = loadOptions
+  }, [engine, config, loadOptions])
 }
 
 // ─── useDashboard ───────────────────────────────────────────────────────────────
-// Main dashboard entry point. Loads config and returns full variable/time-range state.
+// Subscribe to engine runtime state only. Does not load config.
+// Use useLoadDashboard() separately to push config into the engine.
 
 export interface UseDashboardResult {
   variables: Record<string, VariableState>
@@ -45,24 +59,13 @@ export interface UseDashboardResult {
   refreshAll: () => Promise<void>
 }
 
-export function useDashboard(engine: CoreEngineAPI, config: DashboardInput): UseDashboardResult {
-  const loadedConfigRef = useRef<DashboardInput | null>(null)
-
-  // Load on first render and when the caller switches dashboard config.
-  if (loadedConfigRef.current !== config) {
-    engine.load(config)
-    loadedConfigRef.current = config
-  }
-
+export function useDashboard(engine: CoreEngineAPI): UseDashboardResult {
   const store = getStore(engine)
 
   const [state, setState] = useState(() => store.getState())
 
   useEffect(() => {
-    // Sync with latest state on mount
     setState(store.getState())
-    // Subscribe to Zustand store
-
     return store.subscribe((s) => setState(s))
   }, [store])
 
@@ -259,19 +262,35 @@ export function useEngineEvent(
   }, [engine])
 }
 
-// ─── usePanelEditor ─────────────────────────────────────────────────────────────
-// Editor hook: tracks one panel instance, exposes updatePanel and previewPanel.
+// ─── usePanelDraftEditor ────────────────────────────────────────────────────────
+// Editor hook: local draft state separate from committed engine config.
+//
+// Draft lifecycle:
+//   - draft is null until setDraft() is called (null = "no changes")
+//   - draft resets to null when panelId changes (switching panels discards unsaved work)
+//   - apply() commits the current draft via engine.updatePanel(); no-op when draft is null
+//     (caller should guard: "no draft = no unsaved changes = nothing to apply")
+//   - preview() runs a data fetch against the current draft if one exists,
+//     otherwise falls back to the committed config
+//
+// setDraft() merges the patch shallowly into the current draft (or committed config).
+// Top-level keys (title, options, dataRequests, gridPos, …) are replaced in full.
+// For nested objects (options, dataRequests), pass the complete updated value — do not
+// rely on deep merging.
 
-export interface UsePanelEditorResult {
+export interface UsePanelDraftEditorResult {
   instance: PanelRuntimeInstance | null
-  updatePanel(patch: PanelPatchInput): Promise<void>
-  previewPanel(tempPanel: PanelInput): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }>
+  draftPanel: PanelInput | null
+  setDraft(patch: PanelPatchInput): void
+  resetDraft(): void
+  apply(): Promise<void>
+  preview(): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }>
 }
 
-export function usePanelEditor(
+export function usePanelDraftEditor(
   engine: CoreEngineAPI,
   panelId: string | null,
-): UsePanelEditorResult {
+): UsePanelDraftEditorResult {
   const store = getStore(engine)
   const [instances, setInstances] = useState<PanelRuntimeInstance[]>(() => store.getState().panelInstances)
 
@@ -282,23 +301,40 @@ export function usePanelEditor(
 
   const instance = panelId ? (instances.find((p) => p.id === panelId) ?? null) : null
 
-  const updatePanel = useCallback(
-    (patch: PanelPatchInput): Promise<void> => {
-      if (!panelId) return Promise.resolve()
-      return engine.updatePanel(panelId, patch)
+  const [draftPanel, setDraftPanel] = useState<PanelInput | null>(null)
+
+  useEffect(() => {
+    setDraftPanel(null)
+  }, [panelId])
+
+  const setDraft = useCallback(
+    (patch: PanelPatchInput) => {
+      setDraftPanel((prev) => {
+        const base = prev ?? instance?.config ?? null
+        if (!base) return prev
+        return { ...base, ...patch } as PanelInput
+      })
     },
-    [engine, panelId],
+    [instance],
   )
 
-  const previewPanel = useCallback(
-    (tempPanel: PanelInput): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }> => {
-      if (!panelId) return Promise.resolve({ data: null as unknown, rawData: [] })
-      return engine.previewPanel(panelId, tempPanel)
-    },
-    [engine, panelId],
-  )
+  const resetDraft = useCallback(() => {
+    setDraftPanel(null)
+  }, [])
 
-  return { instance, updatePanel, previewPanel }
+  const apply = useCallback((): Promise<void> => {
+    if (!panelId || !draftPanel) return Promise.resolve()
+    return engine.updatePanel(panelId, draftPanel)
+  }, [engine, panelId, draftPanel])
+
+  const preview = useCallback((): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }> => {
+    if (!panelId) return Promise.resolve({ data: null as unknown, rawData: [] })
+    const panel = draftPanel ?? instance?.config
+    if (!panel) return Promise.resolve({ data: null as unknown, rawData: [] })
+    return engine.previewPanel(panelId, panel)
+  }, [engine, panelId, draftPanel, instance])
+
+  return { instance, draftPanel, setDraft, resetDraft, apply, preview }
 }
 
 // ─── useVariableEditor ──────────────────────────────────────────────────────────
@@ -374,4 +410,38 @@ export function useConfigChanged(
       if (e.type === 'config-changed') handlerRef.current(e.config)
     })
   }, [engine])
+}
+
+// ─── useImeInput ─────────────────────────────────────────────────────────────
+// Uncontrolled input helper that is safe with CJK IME composition in Safari.
+//
+// React's controlled inputs (value + onChange) reset input.value on every
+// render, which interrupts in-progress IME composition. This causes spurious
+// onChange events with intermediate/uncommitted characters in Safari.
+//
+// useImeInput returns:
+//   ref     — attach to <input ref={ref} defaultValue={...} /> (no value prop)
+//   getValue — read the browser-committed value at any time (e.g. on submit)
+//   reset    — imperatively set input.value (e.g. when the edited item changes)
+
+export interface UseImeInputResult {
+  ref: RefObject<HTMLInputElement | null>
+  getValue(): string
+  reset(value: string): void
+}
+
+export function useImeInput(initialValue: string): UseImeInputResult {
+  const ref = useRef<HTMLInputElement>(null)
+  const initialValueRef = useRef(initialValue)
+  initialValueRef.current = initialValue
+
+  const getValue = useCallback((): string => {
+    return ref.current?.value ?? initialValueRef.current
+  }, [])
+
+  const reset = useCallback((value: string): void => {
+    if (ref.current) ref.current.value = value
+  }, [])
+
+  return { ref, getValue, reset }
 }

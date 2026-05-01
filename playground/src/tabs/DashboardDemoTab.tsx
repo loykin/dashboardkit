@@ -8,6 +8,7 @@ import {
 } from '@dashboard-engine/core'
 import {
   DashboardGrid,
+  useLoadDashboard,
   useVariable,
 } from '@dashboard-engine/core/react'
 import type { DashboardInput, QueryResult, PanelPluginDef } from '@dashboard-engine/core'
@@ -423,6 +424,8 @@ function VariableMultiSelect({
 export function DashboardDemoTab() {
   const [editable, setEditable] = React.useState(false)
 
+  useLoadDashboard(engine, config)
+
   return (
     <div className="space-y-0 -mx-8 -mt-6">
       <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4">
@@ -441,7 +444,6 @@ export function DashboardDemoTab() {
       <div className="px-4 py-4">
         <DashboardGrid
           engine={engine}
-          config={config}
           editable={editable}
           className="w-full"
         >

@@ -7,8 +7,14 @@ import { BuiltinsTab } from './tabs/BuiltinsTab'
 import { DashboardDemoTab } from './tabs/DashboardDemoTab'
 import { AuthorizationTab } from './tabs/AuthorizationTab'
 import { UrlStateTab } from './tabs/UrlStateTab'
+import { GrafanaStyleTab } from './tabs/GrafanaStyleTab'
+import { SupersetStyleTab } from './tabs/SupersetStyleTab'
+import { NavigationLifecycleTab } from './tabs/NavigationLifecycleTab'
 
 const TABS = [
+  { id: 'navigation-lifecycle', label: 'Navigation Lifecycle', content: <NavigationLifecycleTab /> },
+  { id: 'grafana-style', label: 'Grafana Style', content: <GrafanaStyleTab /> },
+  { id: 'superset-style', label: 'Superset Style', content: <SupersetStyleTab /> },
   { id: 'dashboard', label: '🗂 Dashboard Demo', content: <DashboardDemoTab /> },
   { id: 'authorization', label: 'Authorization', content: <AuthorizationTab /> },
   { id: 'url-state', label: 'URL State', content: <UrlStateTab /> },

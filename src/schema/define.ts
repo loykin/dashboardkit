@@ -1,5 +1,5 @@
 import type { BuiltinContext, BuiltinVariable } from '../variables'
-import type { OptionSchema, ValidationResult } from './options'
+import type { OptionSchema, ValidateOptionSchemaOptions, ValidationResult } from './options'
 import type { DatasourcePluginDef } from '../plugins'
 import type { PanelPluginDef } from '../plugins'
 import type {
@@ -23,7 +23,7 @@ import type {
 
 export type { DatasourcePluginDef } from '../plugins/datasource'
 export type { PanelPluginDef, PanelProps } from '../plugins/panel'
-export type { ValidationResult, ValidationError } from './options'
+export type { ValidateOptionSchemaOptions, ValidationResult, ValidationError } from './options'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
 // uid: 1:1 mapping with dataRequest.uid in the dashboard JSON
@@ -132,7 +132,7 @@ export interface CoreEngineAPI {
       signal?: AbortSignal
     },
   ): Promise<QueryResult>
-  validatePanelOptions(type: string, options: unknown): ValidationResult
+  validatePanelOptions(type: string, options: unknown, validationOptions?: ValidateOptionSchemaOptions): ValidationResult
   validateDataRequest(request: DataRequestInput): ValidationResult
 
   // Time range

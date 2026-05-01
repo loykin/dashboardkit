@@ -6,7 +6,7 @@ import {
   defineVariableType,
 } from '@dashboard-engine/core'
 import { createBrowserDashboardStateStore } from '@dashboard-engine/core/url-state'
-import { DashboardGrid, useVariable } from '@dashboard-engine/core/react'
+import { DashboardGrid, useLoadDashboard, useVariable } from '@dashboard-engine/core/react'
 import type {
   DashboardInput,
   PanelPluginDef,
@@ -105,6 +105,8 @@ export function UrlStateTab() {
     })
   }, [setLastQueryVars])
 
+  useLoadDashboard(engine, config)
+
   React.useEffect(() => {
     const sync = () => setSearch(window.location.search)
     window.addEventListener('popstate', sync)
@@ -120,7 +122,7 @@ export function UrlStateTab() {
     <div className="space-y-4">
       <UrlControls engine={engine} search={search} />
 
-      <DashboardGrid engine={engine} config={config} className="min-w-0">
+      <DashboardGrid engine={engine} className="min-w-0">
         {(props) => <PanelShell {...props} />}
       </DashboardGrid>
 

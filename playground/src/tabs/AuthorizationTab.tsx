@@ -4,7 +4,7 @@ import {
   defineDatasource,
   definePanel,
 } from '@dashboard-engine/core'
-import { DashboardGrid } from '@dashboard-engine/core/react'
+import { DashboardGrid, useLoadDashboard } from '@dashboard-engine/core/react'
 import type {
   AuthContext,
   DashboardInput,
@@ -133,6 +133,8 @@ export function AuthorizationTab() {
     })
   }, [])
 
+  useLoadDashboard(engine, config)
+
   React.useEffect(() => {
     engine.setAuthContext(authContextForRole(role))
   }, [engine, role])
@@ -179,7 +181,7 @@ export function AuthorizationTab() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <DashboardGrid engine={engine} config={config} className="min-w-0">
+        <DashboardGrid engine={engine} className="min-w-0">
           {(props) => <PanelShell {...props} />}
         </DashboardGrid>
 

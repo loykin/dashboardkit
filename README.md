@@ -29,7 +29,7 @@ import {
   defineDatasource,
   definePanel,
 } from '@dashboard-engine/core'
-import { DashboardGrid, useDashboard, usePanel } from '@dashboard-engine/core/react'
+import { DashboardGrid, useLoadDashboard, useDashboard } from '@dashboard-engine/core/react'
 
 // 1. Define plugins
 const myDs = defineDatasource({
@@ -100,10 +100,15 @@ const config = {
 
 // 4. React component
 function MyDashboard() {
-  const { setVariable } = useDashboard(engine, config)
+  // Load boundary: push config into engine once (or when config reference changes)
+  useLoadDashboard(engine, config)
+
+  // Subscribe boundary: read runtime state (variables, timeRange, etc.)
+  const { setVariable } = useDashboard(engine)
 
   return (
-    <DashboardGrid engine={engine} config={config}>
+    // DashboardGrid reads layout and instances from engine state — no config prop needed
+    <DashboardGrid engine={engine}>
       {({ data, loading, error }) =>
         loading ? <p>Loading...</p> : error ? <p>{error}</p> : <pre>{JSON.stringify(data, null, 2)}</pre>
       }
@@ -305,6 +310,28 @@ panels: [
 
 `OptionField` types: `string` | `number` | `boolean` | `select` | `multiselect` | `color` | `json` | `array`
 
+Option schemas are also used by editor validation:
+
+```ts
+const result = engine.validatePanelOptions(
+  'stat',
+  { thresholdWarn: 70, unknownKey: true },
+  { allowUnknown: false },
+)
+```
+
+Supported validation metadata:
+
+- common: `required`, `default`, `validate(value, options)`
+- number: `min`, `max`, `integer`
+- string/color: `minLength`, `maxLength`, `pattern`
+- select/multiselect: `choices`
+- array: `items`, `minItems`, `maxItems`
+
+`allowUnknown` defaults to `true` for compatibility. Use `{ allowUnknown: false }`
+in editor save paths when panel options should be strictly owned by the panel
+plugin schema.
+
 ### `DashboardConfig`
 
 ```ts
@@ -327,11 +354,34 @@ interface DashboardConfig {
 ### Hooks
 
 ```ts
-useDashboard(engine, config): { variables, timeRange, setVariable, setTimeRange, refreshAll }
-usePanel(engine, panelId):    { data, loading, error, state }
-useVariable(engine, name):    VariableState | undefined
-useEngineEvent(engine, handler): void
+// Load boundary — call once at the top of your dashboard component
+useLoadDashboard(engine, config, options?): void
+
+// Subscribe boundary — read runtime state only, no config needed
+useDashboard(engine): { variables, timeRange, setVariable, setTimeRange, setRefresh, refreshAll }
+
+usePanel(engine, panelId):          { data, rawData, loading, error, ref }
+useVariable(engine, name):          { value, options, loading, error, setValue }
+useEngineEvent(engine, handler):    void
+useConfigChanged(engine, handler):  void
+
+// Editor hooks
+usePanelDraftEditor(engine, panelId): { instance, draftPanel, setDraft, resetDraft, apply, preview }
+useVariableEditor(engine, name):      { state, options, setValue, refresh }
+
+// Utilities
+useOptionsChange(options, onOptionsChange): (patch) => void
+useImeInput(initialValue):          { ref, getValue, reset }  // CJK IME-safe uncontrolled input
 ```
+
+## Playground Examples
+
+The playground includes two product-shaped examples:
+
+- `?tab=grafana-style` — variables, time range controls, stat panels, row panel,
+  table panel, and refresh flow.
+- `?tab=superset-style` — chart click cross-filtering with engine-memory
+  selections that do not write to URL/state store.
 
 ## Utilities
 

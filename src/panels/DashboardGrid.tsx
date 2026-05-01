@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import GridLayout, { type LayoutItem } from 'react-grid-layout'
 import type { CoreEngineAPI } from '../schema'
-import type { DashboardInput, FieldConfig, PanelConfig, PanelRuntimeInstance, QueryResult } from '../schema'
-import { useDashboard, usePanel } from '../hooks'
+import type { FieldConfig, PanelConfig, PanelRuntimeInstance, QueryResult } from '../schema'
+import { usePanel } from '../hooks'
+import { getStore } from '../internal/store-access'
 // CSS must be imported by the consumer (e.g. playground):
 // import 'react-grid-layout/css/styles.css'
 
@@ -29,7 +30,6 @@ export interface PanelRenderProps {
 
 export interface DashboardGridProps {
   engine: CoreEngineAPI
-  config: DashboardInput
   /** Grid container width in px. Auto-measured from parent if omitted. */
   width?: number
   /** Grid edit mode (enables drag and resize) */
@@ -46,7 +46,6 @@ export interface DashboardGridProps {
 
 export function DashboardGrid({
   engine,
-  config,
   width,
   editable = false,
   onLayoutChange,
@@ -54,9 +53,17 @@ export function DashboardGrid({
   className,
   style,
 }: DashboardGridProps) {
-  // useDashboard — load config + subscribe to state
-  useDashboard(engine, config)
-  const panelInstances = engine.getPanelInstances()
+  const store = getStore(engine)
+  const [storeState, setStoreState] = useState(() => store.getState())
+
+  useEffect(() => {
+    setStoreState(store.getState())
+    return store.subscribe((s) => setStoreState(s))
+  }, [store])
+
+  const { panelInstances, config } = storeState
+  const cols = config?.layout?.cols ?? 24
+  const rowHeight = config?.layout?.rowHeight ?? 30
 
   // Auto-measure container width
   const containerRef = useRef<HTMLDivElement>(null)
@@ -110,7 +117,7 @@ export function DashboardGrid({
     <div ref={containerRef} className={className} style={style}>
       <GridLayout
         layout={layout}
-        gridConfig={{ cols: config.layout?.cols ?? 24, rowHeight: config.layout?.rowHeight ?? 30, margin: [8, 8] as const }}
+        gridConfig={{ cols, rowHeight, margin: [8, 8] as const }}
         width={containerWidth}
         dragConfig={{ enabled: editable }}
         resizeConfig={{ enabled: editable }}

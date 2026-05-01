@@ -10,8 +10,8 @@ const tablePanel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {
-    title: { type: 'string', label: 'Title' },
-    limit: { type: 'number', label: 'Limit', min: 1, max: 100 },
+    title: { type: 'string', label: 'Title', required: true, minLength: 2 },
+    limit: { type: 'number', label: 'Limit', min: 1, max: 100, integer: true },
     showHeader: { type: 'boolean', label: 'Show header' },
     mode: {
       type: 'select',
@@ -44,10 +44,64 @@ test('validatePanelOptions validates options against panel option schema', () =>
   assert.deepEqual(engine.validatePanelOptions('table', { limit: 200, mode: 'grid' }), {
     valid: false,
     errors: [
+      { path: ['title'], message: 'required option is missing' },
       { path: ['limit'], message: 'must be <= 100' },
       { path: ['mode'], message: 'expected select' },
     ],
   })
+})
+
+test('validatePanelOptions can reject unknown options and custom validation failures', () => {
+  const metricPanel = definePanel({
+    id: 'metric',
+    name: 'Metric',
+    optionsSchema: {
+      unit: {
+        type: 'string',
+        label: 'Unit',
+        pattern: /^[a-z]+$/,
+        validate(value) {
+          return value === 'bad' ? 'unsupported unit' : null
+        },
+      },
+      thresholds: {
+        type: 'array',
+        label: 'Thresholds',
+        minItems: 1,
+        maxItems: 2,
+        items: {
+          color: { type: 'color', label: 'Color', required: true },
+          value: { type: 'number', label: 'Value', required: true },
+        },
+      },
+    },
+  })
+  const engine = createDashboardEngine({
+    panels: [metricPanel],
+    datasourcePlugins: [],
+    variableTypes: [],
+  })
+
+  assert.deepEqual(
+    engine.validatePanelOptions(
+      'metric',
+      {
+        unit: 'bad',
+        extra: true,
+        thresholds: [{ color: 'red' }, { color: 'yellow', value: 80 }, { color: 'green', value: 95 }],
+      },
+      { allowUnknown: false },
+    ),
+    {
+      valid: false,
+      errors: [
+        { path: ['extra'], message: 'unknown option' },
+        { path: ['unit'], message: 'unsupported unit' },
+        { path: ['thresholds'], message: 'must contain at most 2 items' },
+        { path: ['thresholds', '0', 'value'], message: 'required option is missing' },
+      ],
+    },
+  )
 })
 
 test('validatePanelOptions reports missing panel type', () => {
