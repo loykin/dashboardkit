@@ -37,11 +37,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Test
-        run: node --experimental-strip-types --test test/*.test.ts
-
       - name: Build
         run: pnpm build
+
+      - name: Test
+        run: node --experimental-strip-types --test test/*.test.ts
 
       - name: Trivy Scan (npm dependencies)
         uses: aquasecurity/trivy-action@master
