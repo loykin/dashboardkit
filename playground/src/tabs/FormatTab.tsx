@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { interpolate } from '@dashboard-engine/core'
+import { interpolate } from '@loykin/dashboardkit'
 
 const FORMATS = [
   'csv',

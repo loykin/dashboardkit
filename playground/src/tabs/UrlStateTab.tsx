@@ -4,15 +4,15 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
-import { createBrowserDashboardStateStore } from '@dashboard-engine/core/url-state'
-import { DashboardGrid, useLoadDashboard, useVariable } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
+import { DashboardGrid, useLoadDashboard, useVariable } from '@loykin/dashboardkit/react'
 import type {
   DashboardInput,
   PanelPluginDef,
   QueryResult,
-} from '@dashboard-engine/core'
-import type { PanelRenderProps } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 const countries = ['KR', 'US', 'JP']
 

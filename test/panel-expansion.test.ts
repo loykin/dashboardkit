@@ -6,12 +6,12 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 import type {
   DashboardInput,
   PanelExpander,
   QueryOptions,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 const panel = definePanel({
   id: 'table',

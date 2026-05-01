@@ -6,8 +6,8 @@ import {
   createVariableEngine,
   defineDatasource,
   defineVariableType,
-} from '@dashboard-engine/core'
-import type { DashboardConfig } from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
+import type { DashboardConfig } from '@loykin/dashboardkit'
 
 const datasource = defineDatasource({
   uid: 'backend',

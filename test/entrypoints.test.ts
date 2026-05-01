@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import * as core from '@dashboard-engine/core'
-import * as react from '@dashboard-engine/core/react'
-import * as urlState from '@dashboard-engine/core/url-state'
+import * as core from '@loykin/dashboardkit'
+import * as react from '@loykin/dashboardkit/react'
+import * as urlState from '@loykin/dashboardkit/url-state'
 
 test('root entrypoint stays headless', () => {
   assert.equal('createDashboardEngine' in core, true)

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   createPanelRegistry,
   definePanel,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 const viewer = () => null
 const editor = () => null

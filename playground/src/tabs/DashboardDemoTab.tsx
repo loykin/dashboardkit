@@ -5,14 +5,14 @@ import {
   definePanel,
   defineVariableType,
   interpolate,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 import {
   DashboardGrid,
   useLoadDashboard,
   useVariable,
-} from '@dashboard-engine/core/react'
-import type { DashboardInput, QueryResult, PanelPluginDef } from '@dashboard-engine/core'
-import type { PanelRenderProps } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit/react'
+import type { DashboardInput, QueryResult, PanelPluginDef } from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 // ─── Mock Datasource ───────────────────────────────────────────────────────────
 // In production, call the backend with fetch(). Here we return in-memory data.

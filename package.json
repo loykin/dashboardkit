@@ -1,5 +1,5 @@
 {
-  "name": "@dashboard-engine/core",
+  "name": "@loykin/dashboardkit",
   "version": "0.0.1",
   "description": "Headless dashboard orchestration engine — pure TypeScript, no React dependency",
   "type": "module",

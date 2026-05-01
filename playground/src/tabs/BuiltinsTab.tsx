@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ENGINE_BUILTIN_VARIABLES, buildBuiltinMap, calculateInterval } from '@dashboard-engine/core'
+import { ENGINE_BUILTIN_VARIABLES, buildBuiltinMap, calculateInterval } from '@loykin/dashboardkit'
 
 const POSTGRES_BUILTINS = [
   {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   createDashboardEngine,
   definePanel,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 const tablePanel = definePanel({
   id: 'table',

@@ -63,7 +63,7 @@ importers:
 
   playground:
     dependencies:
-      '@dashboard-engine/core':
+      '@loykin/dashboardkit':
         specifier: workspace:*
         version: link:..
       react:

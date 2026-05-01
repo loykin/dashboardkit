@@ -7,8 +7,8 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
-import type { DashboardConfig, DashboardInput, EngineEvent, QueryOptions } from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
+import type { DashboardConfig, DashboardInput, EngineEvent, QueryOptions } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 

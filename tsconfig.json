@@ -13,9 +13,9 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@dashboard-engine/core": ["src/index.ts"],
-      "@dashboard-engine/core/react": ["src/react.ts"],
-      "@dashboard-engine/core/url-state": ["src/adapters/url-state.ts"]
+      "@loykin/dashboardkit": ["src/index.ts"],
+      "@loykin/dashboardkit/react": ["src/react.ts"],
+      "@loykin/dashboardkit/url-state": ["src/adapters/url-state.ts"]
     }
   },
   "include": ["src", "test"]

@@ -9,8 +9,8 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
-import type { DashboardInput } from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
+import type { DashboardInput } from '@loykin/dashboardkit'
 
 const datasource = defineDatasource({
   uid: 'backend',

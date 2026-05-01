@@ -3,16 +3,16 @@ import {
   createDashboardEngine,
   defineDatasource,
   definePanel,
-} from '@dashboard-engine/core'
-import { DashboardGrid, useLoadDashboard } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import { DashboardGrid, useLoadDashboard } from '@loykin/dashboardkit/react'
 import type {
   AuthContext,
   DashboardInput,
   PanelPluginDef,
   QueryOptions,
   QueryResult,
-} from '@dashboard-engine/core'
-import type { PanelRenderProps } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 type Role = 'viewer' | 'editor'
 

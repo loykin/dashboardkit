@@ -6,7 +6,7 @@ import {
   DashboardConfigSchema,
   mergeDashboardStateSnapshots,
   resolveDashboardInitialState,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 test('initial state resolver applies URL over saved over defaults', () => {
   const config = DashboardConfigSchema.parse({

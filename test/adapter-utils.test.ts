@@ -8,7 +8,7 @@ import {
   interpolateVariables,
   parseRelativeTime,
   parseTimeRange,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 const variableConfig = {
   name: 'v',

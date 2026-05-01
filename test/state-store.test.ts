@@ -7,9 +7,9 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
-import { createUrlDashboardStateStore } from '@dashboard-engine/core/url-state'
-import type { DashboardInput, QueryOptions } from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
+import { createUrlDashboardStateStore } from '@loykin/dashboardkit/url-state'
+import type { DashboardInput, QueryOptions } from '@loykin/dashboardkit'
 
 const panel = definePanel({
   id: 'table',

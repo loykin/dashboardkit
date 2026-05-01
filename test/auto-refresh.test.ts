@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 
 import {
   createAutoRefreshAddon,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 import type {
   CoreEngineAPI,
   EngineEvent,
-} from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
 
 function createRefreshEngine(initialRefresh = '5s') {
   let refresh = initialRefresh

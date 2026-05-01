@@ -4,10 +4,10 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '@dashboard-engine/core'
-import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@dashboard-engine/core/react'
-import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@dashboard-engine/core'
-import type { PanelRenderProps } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
+import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 interface SeriesRow {
   time: string

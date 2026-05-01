@@ -54,8 +54,8 @@ export default function App() {
     <div className="min-h-screen bg-white text-gray-900 font-sans">
       {/* Header */}
       <div className="border-b border-gray-200 px-8 py-3">
-        <h1 className="text-lg font-semibold">Dashboard Engine Playground</h1>
-        <p className="text-xs text-gray-400 mt-0.5">@dashboard-engine/core</p>
+        <h1 className="text-lg font-semibold">DashboardKit Playground</h1>
+        <p className="text-xs text-gray-400 mt-0.5">@loykin/dashboardkit</p>
       </div>
 
       {/* Tab bar */}

@@ -3,10 +3,10 @@ import {
   createDashboardEngine,
   defineDatasource,
   definePanel,
-} from '@dashboard-engine/core'
-import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@dashboard-engine/core/react'
-import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@dashboard-engine/core'
-import type { PanelRenderProps } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@loykin/dashboardkit/react'
+import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 const salesRows = [
   ['KR', 'platform', 128],

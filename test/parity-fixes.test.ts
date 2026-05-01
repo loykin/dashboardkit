@@ -7,8 +7,8 @@ import {
   definePanel,
   defineVariableType,
   createMemoryDashboardStateStore,
-} from '@dashboard-engine/core'
-import type { DashboardInput, QueryOptions, QueryResult } from '@dashboard-engine/core'
+} from '@loykin/dashboardkit'
+import type { DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 

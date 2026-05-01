@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buildVariableDAG, CircularDependencyError } from '@dashboard-engine/core'
+import { buildVariableDAG, CircularDependencyError } from '@loykin/dashboardkit'
 
 type VarRow = { name: string; query: string }
 
@@ -60,7 +60,7 @@ export function DagTab() {
     if (row.query) {
       // extract $varName refs manually from the row (re-use the core parser)
       const knownNames = new Set(rows.map((r) => r.name))
-      const matches = row.query.matchAll(/\$\{?([a-zA-Z_][a-zA-Z0-9_]*)(?::[a-zA-Z]+)?\}?/g)
+      const matches = row.query.matchAll(/\$\{?([a-zA-Z_][a-zA-Z0-9_]*)(?::[a-zA-Z]+)?}?/g)
       for (const m of matches) {
         const ref = m[1]!
         if (ref !== row.name && knownNames.has(ref) && !deps.includes(ref)) deps.push(ref)

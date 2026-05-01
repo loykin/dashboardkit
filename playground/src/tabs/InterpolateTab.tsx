@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { interpolate } from '@dashboard-engine/core'
-import type { InterpolateContext } from '@dashboard-engine/core'
+import { interpolate } from '@loykin/dashboardkit'
+import type { InterpolateContext } from '@loykin/dashboardkit'
 
 const INITIAL_TEMPLATE =
   "SELECT * FROM sales\nWHERE country = '$country'\n  AND city IN (${city:sqlin})\n  AND $__timeFilter(created_at)"

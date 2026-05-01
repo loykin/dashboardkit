@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { parseRefs } from '@dashboard-engine/core'
-import type { ParseResult } from '@dashboard-engine/core'
+import { parseRefs } from '@loykin/dashboardkit'
+import type { ParseResult } from '@loykin/dashboardkit'
 
 const PRESETS = [
   {

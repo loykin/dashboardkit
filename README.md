@@ -1,4 +1,4 @@
-# @dashboard-engine/core
+# @loykin/dashboardkit
 
 A headless dashboard orchestration engine inspired by Grafana — pure TypeScript, no framework opinion.
 
@@ -16,7 +16,7 @@ A headless dashboard orchestration engine inspired by Grafana — pure TypeScrip
 ## Installation
 
 ```bash
-pnpm add @dashboard-engine/core
+pnpm add @loykin/dashboardkit
 # peer dependencies
 pnpm add react react-dom react-grid-layout zod zustand
 ```
@@ -28,8 +28,8 @@ import {
   createDashboardEngine,
   defineDatasource,
   definePanel,
-} from '@dashboard-engine/core'
-import { DashboardGrid, useLoadDashboard, useDashboard } from '@dashboard-engine/core/react'
+} from '@loykin/dashboardkit'
+import { DashboardGrid, useLoadDashboard, useDashboard } from '@loykin/dashboardkit/react'
 
 // 1. Define plugins
 const myDs = defineDatasource({
@@ -132,9 +132,9 @@ Dashboard App (user code)
 │   ├── panels[]             ← PanelPluginDef
 │   └── variableTypes[]      ← VariableTypePluginDef
 │
-├── @dashboard-engine/core   ← Headless engine, schema, plugins, parser, state interface
+├── @loykin/dashboardkit   ← Headless engine, schema, plugins, parser, state interface
 │
-├── @dashboard-engine/core/react
+├── @loykin/dashboardkit/react
 │   ├── React Hooks
 │   ├── useDashboard()       ← Full state (variables, time range)
 │   ├── usePanel()           ← Panel data + loading state
@@ -142,7 +142,7 @@ Dashboard App (user code)
 │   ├── useEngineEvent()     ← Engine event subscription
 │   └── DashboardGrid        ← react-grid-layout v2 wrapper
 │
-└── @dashboard-engine/core/url-state
+└── @loykin/dashboardkit/url-state
     └── URL query params DashboardStateStore implementation
 ```
 
@@ -189,13 +189,13 @@ interface DashboardStateStore {
 }
 ```
 
-Use `createMemoryDashboardStateStore()` from `@dashboard-engine/core` for local
-state, `createBrowserDashboardStateStore()` from `@dashboard-engine/core/url-state`
+Use `createMemoryDashboardStateStore()` from `@loykin/dashboardkit` for local
+state, `createBrowserDashboardStateStore()` from `@loykin/dashboardkit/url-state`
 for URL query params, or provide a custom implementation backed by router state
 or another persistence mechanism.
 
 ```ts
-import { createBrowserDashboardStateStore } from '@dashboard-engine/core/url-state'
+import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 
 const stateStore = createBrowserDashboardStateStore()
 
@@ -262,8 +262,8 @@ interface QueryResult {
 `definePanel` accepts a `TOptions` generic to type-check per-panel configuration.
 
 ```ts
-import { definePanel, applyOptionDefaults } from '@dashboard-engine/core'
-import type { OptionSchema } from '@dashboard-engine/core'
+import { definePanel, applyOptionDefaults } from '@loykin/dashboardkit'
+import type { OptionSchema } from '@loykin/dashboardkit'
 
 interface StatOptions {
   thresholdWarn: number
@@ -386,7 +386,7 @@ The playground includes two product-shaped examples:
 ## Utilities
 
 ```ts
-import { interpolate, parseRefs, format } from '@dashboard-engine/core'
+import { interpolate, parseRefs, format } from '@loykin/dashboardkit'
 
 // Variable interpolation
 interpolate('Hello $name!', { name: 'World' })
