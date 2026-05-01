@@ -48,8 +48,8 @@ test('variable readiness tracks idle, loading, success, error, and missing state
   })
 
   varEngine.load([
-    { name: 'slow', type: 'slow', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false },
-    { name: 'bad', type: 'error', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false },
+    { name: 'slow', type: 'slow', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false, refreshOnTimeRangeChange: false },
+    { name: 'bad', type: 'error', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false, refreshOnTimeRangeChange: false },
   ])
 
   assert.deepEqual(varEngine.getVariableReadiness(['slow']), {

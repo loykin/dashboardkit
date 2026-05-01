@@ -35,6 +35,16 @@ export interface OptionField {
 
 export type OptionSchema = Record<string, OptionField>
 
+export interface ValidationError {
+  path: string[]
+  message: string
+}
+
+export interface ValidationResult {
+  valid: boolean
+  errors: ValidationError[]
+}
+
 /**
  * Fill in default values from OptionSchema into the options object.
  */
@@ -49,4 +59,73 @@ export function applyOptionDefaults(
     }
   }
   return result
+}
+
+function optionTypeMatches(field: OptionField, value: unknown): boolean {
+  switch (field.type) {
+    case 'string':
+    case 'color':
+      return typeof value === 'string'
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value)
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'select':
+      return field.choices ? field.choices.some((choice) => choice.value === value) : true
+    case 'multiselect':
+      return Array.isArray(value) && (
+        !field.choices ||
+        value.every((item) => field.choices?.some((choice) => choice.value === item))
+      )
+    case 'array':
+      return Array.isArray(value)
+    case 'json':
+      return true
+    default:
+      return false
+  }
+}
+
+export function validateOptionSchema(
+  schema: OptionSchema,
+  options: unknown,
+  basePath: string[] = [],
+): ValidationResult {
+  const errors: ValidationError[] = []
+
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    return {
+      valid: false,
+      errors: [{ path: basePath, message: 'options must be an object' }],
+    }
+  }
+
+  const values = options as Record<string, unknown>
+  for (const [key, field] of Object.entries(schema)) {
+    const value = values[key]
+    if (value === undefined) continue
+
+    if (!optionTypeMatches(field, value)) {
+      errors.push({ path: [...basePath, key], message: `expected ${field.type}` })
+      continue
+    }
+
+    if (field.type === 'number' && typeof value === 'number') {
+      if (field.min !== undefined && value < field.min) {
+        errors.push({ path: [...basePath, key], message: `must be >= ${field.min}` })
+      }
+      if (field.max !== undefined && value > field.max) {
+        errors.push({ path: [...basePath, key], message: `must be <= ${field.max}` })
+      }
+    }
+
+    if (field.type === 'array' && field.items && Array.isArray(value)) {
+      value.forEach((item, index) => {
+        const nested = validateOptionSchema(field.items!, item, [...basePath, key, String(index)])
+        errors.push(...nested.errors)
+      })
+    }
+  }
+
+  return { valid: errors.length === 0, errors }
 }

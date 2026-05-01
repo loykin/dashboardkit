@@ -81,14 +81,29 @@ export function DashboardGrid({
     y: p.gridPos.y,
     w: p.gridPos.w,
     h: p.gridPos.h,
-    static: !editable,
+    // Repeat instances are always static — edit the origin panel instead
+    static: !editable || !!p.repeat,
+    // Row panels: fixed height of 1 row unit, no vertical resize
+    ...(p.config.isRow ? { minH: 1, maxH: 1 } : {}),
   }))
 
   const handleLayoutChange = useCallback(
     (newLayout: readonly LayoutItem[]) => {
       onLayoutChange?.(newLayout)
+      if (!editable) return
+      for (const item of newLayout) {
+        const instance = panelInstances.find((p) => p.id === item.i)
+        if (!instance || instance.repeat) continue
+        const { x, y, w, h } = instance.gridPos
+        if (x === item.x && y === item.y && w === item.w && h === item.h) continue
+        void engine.updatePanel(
+          instance.originId,
+          { gridPos: { x: item.x, y: item.y, w: item.w, h: item.h } },
+          { refresh: false, invalidateCache: false },
+        )
+      }
     },
-    [onLayoutChange],
+    [onLayoutChange, editable, panelInstances, engine],
   )
 
   return (

@@ -1,13 +1,14 @@
-import type { VariableOption } from './types'
-import type { QueryOptions, QueryResult } from './types'
 import type { BuiltinContext, BuiltinVariable } from '../variables'
-import type { OptionSchema } from './options'
+import type { OptionSchema, ValidationResult } from './options'
+import type { DatasourcePluginDef } from '../plugins'
+import type { PanelPluginDef } from '../plugins'
 import type {
   AuthContext,
   AuthorizationDecision,
   AuthorizationRequest,
   DashboardLoadOptions,
   DashboardStateStore,
+  DataRequestInput,
   PanelConfig,
   PanelInput,
   PanelPatchInput,
@@ -15,50 +16,28 @@ import type {
   PanelExpander,
   PanelRuntimeInstance,
   PanelReadiness,
+  QueryResult,
   VariableReadiness,
+  VariableOption,
 } from './types'
+
+export type { DatasourcePluginDef } from '../plugins/datasource'
+export type { PanelPluginDef, PanelProps } from '../plugins/panel'
+export type { ValidationResult, ValidationError } from './options'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
 // uid: 1:1 mapping with dataRequest.uid in the dashboard JSON
 // options: infrastructure config for this instance (URL, auth, etc.) — differs per environment
-export interface DatasourcePluginDef<TOptions = Record<string, unknown>> {
-  uid: string
-  type: string
-  options?: TOptions
-
-  query: (options: QueryOptions<TOptions>) => Promise<QueryResult>
-  metricFindQuery?: (
-    query: string,
-    vars: Record<string, string | string[]>,
-  ) => Promise<VariableOption[]>
-}
-
-export function defineDatasource<TOptions = Record<string, unknown>>(
-  def: DatasourcePluginDef<TOptions>,
-): DatasourcePluginDef<TOptions> {
+export function defineDatasource<
+  TOptions = Record<string, unknown>,
+  TQuery = unknown,
+>(
+  def: DatasourcePluginDef<TOptions, TQuery>,
+): DatasourcePluginDef<TOptions, TQuery> {
   return def
 }
 
 // ─── Panel Plugin ───────────────────────────────────────────────────────────────
-
-export interface PanelProps<TOptions, TData> {
-  options: TOptions
-  data: TData
-  rawData: QueryResult[] | null
-  width: number
-  height: number
-  loading: boolean
-  error: string | null
-}
-
-export interface PanelPluginDef<_TOptions = Record<string, unknown>, TData = unknown> {
-  id: string
-  name: string
-  optionsSchema: OptionSchema
-
-  // Transforms query results into the shape consumed by the panel.
-  transform?: (results: QueryResult[]) => TData
-}
 
 export function definePanel<TOptions = Record<string, unknown>, TData = unknown>(
   def: PanelPluginDef<TOptions, TData>,
@@ -131,6 +110,7 @@ export interface CoreEngineAPI {
   getPanelReadiness(panelId: string): PanelReadiness | null
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
+  toggleRow(panelId: string): Promise<void>
   updatePanel(
     panelId: string,
     patch: PanelPatchInput | ((current: PanelConfig) => PanelInput),
@@ -144,6 +124,16 @@ export interface CoreEngineAPI {
       signal?: AbortSignal
     },
   ): Promise<{ data: unknown; rawData: QueryResult[] }>
+  previewDataRequest(
+    request: DataRequestInput,
+    options?: {
+      panelId?: string
+      variablesOverride?: Record<string, string | string[]>
+      signal?: AbortSignal
+    },
+  ): Promise<QueryResult>
+  validatePanelOptions(type: string, options: unknown): ValidationResult
+  validateDataRequest(request: DataRequestInput): ValidationResult
 
   // Time range
   setTimeRange(range: { from: string; to: string }): void
@@ -154,6 +144,12 @@ export interface CoreEngineAPI {
   // Authorization context
   setAuthContext(context: AuthContext): void
   getAuthContext(): AuthContext
+
+  // Cross-filter — panel-scoped variable overrides, engine memory only (not persisted to state store)
+  setPanelSelection(panelId: string, filters: Record<string, string | string[]>): void
+  clearPanelSelection(panelId: string): void
+  clearAllPanelSelections(): void
+  getPanelSelections(): Record<string, Record<string, string | string[]>>
 
   // Subscribe (returns unsubscribe function)
   subscribe(listener: (event: import('./types').EngineEvent) => void): () => void

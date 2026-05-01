@@ -20,6 +20,7 @@ const variableConfig = {
   sort: 'none' as const,
   hide: 'none' as const,
   includeAll: false,
+  refreshOnTimeRangeChange: false,
 }
 
 const resolveContext = {

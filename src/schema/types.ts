@@ -55,6 +55,7 @@ export const VariableConfigSchema = z.object({
   allValue: z.string().optional(),
   hide: z.enum(['none', 'label', 'variable']).default('none'),
   sort: z.enum(['none', 'alphaAsc', 'alphaDesc', 'numericAsc', 'numericDesc']).default('none'),
+  refreshOnTimeRangeChange: z.boolean().default(false),
   permissions: z.array(PermissionRuleSchema).default([]),
   options: z.record(z.unknown()).default({}),
 })
@@ -120,6 +121,10 @@ export const PanelConfigSchema = z.object({
 
   // ── Data ──
   dataRequests: z.array(DataRequestSchema).default([]),
+
+  // ── Row / Section ──
+  isRow: z.boolean().default(false),
+  collapsed: z.boolean().default(false),
 
   // ── Display ──
   fieldConfig: FieldConfigSchema.optional(),
@@ -375,6 +380,8 @@ export interface PanelRuntimeInstance {
   type: string
   title: string
   gridPos: GridPos
+  isRow?: boolean
+  collapsed?: boolean
   variablesOverride?: Record<string, string | string[]>
   repeat?: {
     varName: string
@@ -418,3 +425,5 @@ export type EngineEvent =
   | { type: 'authorization-denied'; action: PermissionAction; resourceId: string; reason: string }
   | { type: 'time-range-changed'; range: { from: string; to: string } }
   | { type: 'refresh-changed'; refresh: string }
+  | { type: 'panel-selection-changed'; panelId: string; selection: Record<string, string | string[]> | null }
+  | { type: 'config-changed'; config: DashboardConfig }

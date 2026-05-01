@@ -5,8 +5,11 @@ import type {
   DashboardConfig,
   DashboardInput,
   EngineEvent,
+  PanelInput,
+  PanelPatchInput,
   PanelRuntimeInstance,
   PanelState,
+  VariableOption,
   VariableState,
 } from '../schema'
 
@@ -253,5 +256,122 @@ export function useEngineEvent(
 
   useEffect(() => {
     return engine.subscribe((e) => handlerRef.current(e))
+  }, [engine])
+}
+
+// ─── usePanelEditor ─────────────────────────────────────────────────────────────
+// Editor hook: tracks one panel instance, exposes updatePanel and previewPanel.
+
+export interface UsePanelEditorResult {
+  instance: PanelRuntimeInstance | null
+  updatePanel(patch: PanelPatchInput): Promise<void>
+  previewPanel(tempPanel: PanelInput): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }>
+}
+
+export function usePanelEditor(
+  engine: CoreEngineAPI,
+  panelId: string | null,
+): UsePanelEditorResult {
+  const store = getStore(engine)
+  const [instances, setInstances] = useState<PanelRuntimeInstance[]>(() => store.getState().panelInstances)
+
+  useEffect(() => {
+    setInstances(store.getState().panelInstances)
+    return store.subscribe((s) => setInstances(s.panelInstances))
+  }, [store])
+
+  const instance = panelId ? (instances.find((p) => p.id === panelId) ?? null) : null
+
+  const updatePanel = useCallback(
+    (patch: PanelPatchInput): Promise<void> => {
+      if (!panelId) return Promise.resolve()
+      return engine.updatePanel(panelId, patch)
+    },
+    [engine, panelId],
+  )
+
+  const previewPanel = useCallback(
+    (tempPanel: PanelInput): Promise<{ data: unknown; rawData: import('../schema/types').QueryResult[] }> => {
+      if (!panelId) return Promise.resolve({ data: null as unknown, rawData: [] })
+      return engine.previewPanel(panelId, tempPanel)
+    },
+    [engine, panelId],
+  )
+
+  return { instance, updatePanel, previewPanel }
+}
+
+// ─── useVariableEditor ──────────────────────────────────────────────────────────
+// Editor hook: full variable state + refresh trigger for variable picker UIs.
+
+export interface UseVariableEditorResult {
+  state: VariableState
+  options: VariableOption[]
+  setValue(value: string | string[]): void
+  refresh(): Promise<boolean>
+}
+
+function defaultVarState(name: string): VariableState {
+  return { name, type: '', value: '', options: [], loading: false, error: null, status: 'idle' }
+}
+
+export function useVariableEditor(
+  engine: CoreEngineAPI,
+  name: string,
+): UseVariableEditorResult {
+  const store = getStore(engine)
+  const [varState, setVarState] = useState<VariableState>(
+    () => store.getState().variables[name] ?? defaultVarState(name),
+  )
+
+  useEffect(() => {
+    setVarState(store.getState().variables[name] ?? defaultVarState(name))
+    return store.subscribe((s) => {
+      const next = s.variables[name]
+      if (next) setVarState(next)
+    })
+  }, [store, name])
+
+  const setValue = useCallback(
+    (value: string | string[]) => engine.setVariable(name, value),
+    [engine, name],
+  )
+
+  const refresh = useCallback(
+    () => engine.refreshVariable(name),
+    [engine, name],
+  )
+
+  return { state: varState, options: varState.options, setValue, refresh }
+}
+
+// ─── useOptionsChange ────────────────────────────────────────────────────────────
+// Helper for partial panel options updates in editor UIs.
+// Returns a stable updater that merges a partial patch into the current options object.
+
+export function useOptionsChange<T extends object>(
+  options: T,
+  onOptionsChange: ((newOptions: T) => void) | undefined,
+): (patch: Partial<T>) => void {
+  return useCallback(
+    (patch: Partial<T>) => onOptionsChange?.({ ...options, ...patch }),
+    [options, onOptionsChange],
+  )
+}
+
+// ─── useConfigChanged ────────────────────────────────────────────────────────────
+// Subscribe to config-changed events (e.g. to track unsaved changes in the app layer).
+
+export function useConfigChanged(
+  engine: CoreEngineAPI,
+  handler: (config: DashboardConfig) => void,
+): void {
+  const handlerRef = useRef(handler)
+  handlerRef.current = handler
+
+  useEffect(() => {
+    return engine.subscribe((e) => {
+      if (e.type === 'config-changed') handlerRef.current(e.config)
+    })
   }, [engine])
 }

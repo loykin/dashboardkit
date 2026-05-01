@@ -67,6 +67,7 @@ test('variable engine resolves variables without a dashboard engine', async () =
       sort: 'none' as const,
       hide: 'none' as const,
       includeAll: false,
+      refreshOnTimeRangeChange: false,
     },
   ])
 
@@ -101,6 +102,7 @@ test('variable engine falls back to default when stale canonical value is not in
       sort: 'none' as const,
       hide: 'none' as const,
       includeAll: false,
+      refreshOnTimeRangeChange: false,
     },
   ])
 

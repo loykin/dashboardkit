@@ -6,6 +6,7 @@ import type {
   DashboardInput,
   DashboardLoadOptions,
   DataRequestConfig,
+  DataRequestInput,
   VariableConfig,
   VariableState,
   PanelConfig,
@@ -20,7 +21,8 @@ import type {
   PanelRuntimeInstance,
   PanelExpander,
 } from '../schema'
-import { DashboardConfigSchema, PanelConfigSchema } from '../schema'
+import { DashboardConfigSchema, DataRequestSchema, PanelConfigSchema } from '../schema'
+import { validateOptionSchema } from '../schema'
 import { createMemoryDashboardStateStore } from './state'
 import type {
   PanelPluginDef,
@@ -76,6 +78,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   const panelAbortControllers = new Map<string, AbortController>()
   const panelExpanders: PanelExpander[] = buildPanelExpanders(customPanelExpanders)
+
+  // Phase E: cross-filter — panel-scoped variable overrides, engine memory only
+  const panelSelections = new Map<string, Record<string, string | string[]>>()
 
   const listeners = new Set<(e: EngineEvent) => void>()
   const emit = (e: EngineEvent) => listeners.forEach((l) => l(e))
@@ -191,10 +196,34 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     await auth.ensureAuthorized({ action: 'datasource:query', dashboard: cfg, variable: vcfg, dataRequest, datasourceUid: dataRequest.uid, permissions })
   }
 
+  async function ensurePreviewDataRequestAuthorized(
+    cfg: DashboardConfig,
+    dataRequest: DataRequestConfig,
+    pcfg?: PanelConfig,
+  ): Promise<void> {
+    const permissions = pcfg
+      ? [...cfg.permissions, ...pcfg.permissions, ...dataRequest.permissions]
+      : [...cfg.permissions, ...dataRequest.permissions]
+    await auth.ensureAuthorized({
+      action: 'datasource:query',
+      dashboard: cfg,
+      ...(pcfg ? { panel: pcfg } : {}),
+      dataRequest,
+      datasourceUid: dataRequest.uid,
+      permissions,
+    })
+  }
+
   // ─── Panel instance helpers ───────────────────────────────────────────────────
 
   function buildCtxVariables(): Record<string, string | string[]> {
     return varEngine.getVariables()
+  }
+
+  function buildCrossFilterVariables(): Record<string, string | string[]> {
+    const merged: Record<string, string | string[]> = {}
+    for (const filters of panelSelections.values()) Object.assign(merged, filters)
+    return merged
   }
 
   function buildPanelInstances(): PanelRuntimeInstance[] {
@@ -349,7 +378,8 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   function buildPanelQueryContext(instance: PanelRuntimeInstance) {
     const tr = stateStore.getSnapshot().timeRange
-    const effectiveVariables = { ...buildCtxVariables(), ...(instance.variablesOverride ?? {}) }
+    // cross-filter sits between global vars and repeat-instance overrides
+    const effectiveVariables = { ...buildCtxVariables(), ...buildCrossFilterVariables(), ...(instance.variablesOverride ?? {}) }
     return { tr, variables: effectiveVariables }
   }
 
@@ -506,6 +536,35 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     await refreshAllPanels({ supersede: supersedePanels })
   }
 
+  async function refreshVariableNames(names: string[]): Promise<string[]> {
+    const requested = new Set(names)
+    const changed: string[] = []
+    for (const name of varEngine.getSortedNames()) {
+      if (!requested.has(name)) continue
+      if (await varEngine.refreshOne(name)) changed.push(name)
+    }
+    return changed
+  }
+
+  async function refreshTimeRangeVariables(cfg: DashboardConfig): Promise<string[]> {
+    const names = cfg.variables
+      .filter((variable) => variable.refreshOnTimeRangeChange)
+      .map((variable) => variable.name)
+    if (names.length === 0) return []
+
+    suppressDashboardSnapshotEvents = true
+    try {
+      const directChanged = await refreshVariableNames(names)
+      const downstreamChanged = directChanged.length > 0
+        ? await varEngine.refreshDownstream(directChanged)
+        : []
+      syncPanelInstances()
+      return [...new Set([...directChanged, ...downstreamChanged])]
+    } finally {
+      suppressDashboardSnapshotEvents = false
+    }
+  }
+
   // ─── Snapshot change handler ──────────────────────────────────────────────────
 
   async function handleDashboardSnapshotChange(snapshot: DashboardStateSnapshot): Promise<void> {
@@ -531,6 +590,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     if (timeChanged && snapshot.timeRange) {
       emit({ type: 'time-range-changed', range: snapshot.timeRange })
       clearCache()
+    }
+
+    const timeRangeChangedVars = timeChanged ? await refreshTimeRangeVariables(cfg) : []
+    for (const name of timeRangeChangedVars) {
+      const value = stateStore.getSnapshot().variables[name]
+      if (value !== undefined) emit({ type: 'variable-changed', name, value })
     }
 
     if (changedVars.length > 0) {
@@ -567,6 +632,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const { statePolicy = 'preserve', state: explicitState } = loadOptions ?? {}
 
       abortPanelRequests()
+      panelSelections.clear()
       suppressDashboardSnapshotEvents = true
 
       if (statePolicy === 'replace-dashboard-variables') {
@@ -689,6 +755,35 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     async refreshAll() { await refreshAllPanels() },
 
+    async toggleRow(panelId) {
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      const row = cfg.panels.find((p) => p.id === panelId)
+      if (!row?.isRow) {
+        throw Object.assign(
+          new Error(`Panel "${panelId}" is not a row panel or does not exist`),
+          { name: 'PanelNotFoundError' },
+        )
+      }
+
+      const beforeIds = new Set(store.getState().panelInstances.map((instance) => instance.id))
+      await api.updatePanel(
+        panelId,
+        { collapsed: !row.collapsed },
+        { refresh: false, invalidateCache: false },
+      )
+
+      const nextRow = store.getState().config?.panels.find((p) => p.id === panelId)
+      if (!nextRow || nextRow.collapsed) return
+
+      const newlyVisible = store.getState().panelInstances
+        .map((instance) => instance.id)
+        .filter((id) => !beforeIds.has(id))
+
+      await Promise.all(newlyVisible.map((id) => executePanel(id)))
+    },
+
     // P3-1: update a single panel config without full dashboard reload
     async updatePanel(panelId, patch, options = {}) {
       const { refresh = true, invalidateCache = true } = options
@@ -720,6 +815,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       store.setState((s) => ({
         config: s.config ? nextConfig : null,
       }))
+      emit({ type: 'config-changed', config: nextConfig })
 
       syncPanelInstances()
 
@@ -768,6 +864,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         activeRequests.map(async (request) => {
           const dsDef = datasourceRegistry.getForRequest(request)
           await ensurePanelDataRequestAuthorized(cfg, parsedTempPanel, request, request.uid)
+          if (controller.signal.aborted) throw abortError()
           const result = await dsDef.query({
             dataRequest: request,
             dashboardId: cfg.id,
@@ -794,6 +891,70 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       return { data, rawData }
     },
 
+    async previewDataRequest(request: DataRequestInput, options = {}) {
+      const { panelId, variablesOverride = {}, signal: callerSignal } = options
+      const cfg = store.getState().config
+      if (!cfg) throw new Error('no dashboard loaded')
+
+      const parsedRequest = DataRequestSchema.parse(request)
+      const panelInstance = panelId ? findPanelInstance(panelId) : undefined
+      const panelConfig = panelInstance?.config
+      const effectiveVariables = { ...buildCtxVariables(), ...variablesOverride }
+      const tr = stateStore.getSnapshot().timeRange
+
+      const controller = new AbortController()
+      if (callerSignal) {
+        if (callerSignal.aborted) throw abortError()
+        callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+      }
+
+      const dsDef = datasourceRegistry.getForRequest(parsedRequest)
+      await ensurePreviewDataRequestAuthorized(cfg, parsedRequest, panelConfig)
+      if (controller.signal.aborted) throw abortError()
+
+      const result = await dsDef.query({
+        dataRequest: parsedRequest,
+        dashboardId: cfg.id,
+        panelId: panelId ?? '',
+        requestId: parsedRequest.id,
+        ...(parsedRequest.query !== undefined ? { query: parsedRequest.query } : {}),
+        requestOptions: parsedRequest.options,
+        variables: effectiveVariables,
+        datasourceOptions: dsDef.options ?? ({} as never),
+        authContext: store.getState().authContext,
+        ...(tr !== undefined ? { timeRange: tr } : {}),
+        signal: controller.signal,
+        builtins: varEngine.getBuiltins(),
+        ...(panelConfig ? { panel: panelConfig, panelOptions: panelConfig.options } : {}),
+        ...(panelInstance ? { panelInstance } : {}),
+      })
+      return { ...result, requestId: parsedRequest.id }
+    },
+
+    validatePanelOptions(type, options) {
+      const panelDef = panelMap.get(type)
+      if (!panelDef) {
+        return {
+          valid: false,
+          errors: [{ path: ['type'], message: `panel type "${type}" is not registered` }],
+        }
+      }
+      return validateOptionSchema(panelDef.optionsSchema, options)
+    },
+
+    validateDataRequest(request) {
+      const parsed = DataRequestSchema.safeParse(request)
+      if (parsed.success) return { valid: true, errors: [] }
+
+      return {
+        valid: false,
+        errors: parsed.error.issues.map((issue) => ({
+          path: issue.path.map(String),
+          message: issue.message,
+        })),
+      }
+    },
+
     setTimeRange(range) { stateStore.setPatch({ timeRange: range }) },
     getTimeRange() { return stateStore.getSnapshot().timeRange },
     setRefresh(refresh) { stateStore.setPatch({ refresh }) },
@@ -806,6 +967,40 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     getAuthContext() { return store.getState().authContext },
+
+    // ─── Cross-filter ───────────────────────────────────────────────────────────
+    setPanelSelection(panelId, filters) {
+      panelSelections.set(panelId, filters)
+      emit({ type: 'panel-selection-changed', panelId, selection: filters })
+      clearCache()
+      void api.refreshAll()
+    },
+
+    clearPanelSelection(panelId) {
+      if (!panelSelections.has(panelId)) return
+      panelSelections.delete(panelId)
+      emit({ type: 'panel-selection-changed', panelId, selection: null })
+      clearCache()
+      void api.refreshAll()
+    },
+
+    clearAllPanelSelections() {
+      if (panelSelections.size === 0) return
+      const ids = [...panelSelections.keys()]
+      panelSelections.clear()
+      for (const panelId of ids) {
+        emit({ type: 'panel-selection-changed', panelId, selection: null })
+      }
+      clearCache()
+      void api.refreshAll()
+    },
+
+    getPanelSelections() {
+      const result: Record<string, Record<string, string | string[]>> = {}
+      for (const [panelId, filters] of panelSelections) result[panelId] = { ...filters }
+      return result
+    },
+
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)

@@ -8,7 +8,7 @@ import {
   defineVariableType,
   createMemoryDashboardStateStore,
 } from '@dashboard-engine/core'
-import type { DashboardInput, QueryOptions } from '@dashboard-engine/core'
+import type { DashboardInput, QueryOptions, QueryResult } from '@dashboard-engine/core'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -777,4 +777,267 @@ test('variable dataRequest options participate in dependency cascade', async () 
   await engine.refreshVariable('varA')
 
   assert.ok(resolvedNames.includes('varB'), 'varB should refresh when it references varA in dataRequest options')
+})
+
+test('time range change refreshes variables marked refreshOnTimeRangeChange', async () => {
+  let resolveCount = 0
+
+  const timeType = defineVariableType({
+    id: 'time-aware',
+    name: 'Time aware',
+    optionsSchema: {},
+    async resolve() {
+      resolveCount += 1
+      return [{ label: `value-${resolveCount}`, value: `value-${resolveCount}` }]
+    },
+  })
+
+  const ds = makeDs('ds')
+  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+
+  engine.load({
+    schemaVersion: 1, id: 'd', title: 'D',
+    variables: [{ name: 'windowed', type: 'time-aware', refreshOnTimeRangeChange: true }],
+    panels: [],
+  })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  assert.equal(resolveCount, 1)
+  engine.setTimeRange({ from: 'now-1h', to: 'now' })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  assert.equal(resolveCount, 2)
+  assert.equal(engine.getVariable('windowed')?.value, 'value-2')
+})
+
+test('time range change does not refresh unmarked variables', async () => {
+  let resolveCount = 0
+
+  const timeType = defineVariableType({
+    id: 'time-aware',
+    name: 'Time aware',
+    optionsSchema: {},
+    async resolve() {
+      resolveCount += 1
+      return [{ label: `value-${resolveCount}`, value: `value-${resolveCount}` }]
+    },
+  })
+
+  const ds = makeDs('ds')
+  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+
+  engine.load({
+    schemaVersion: 1, id: 'd', title: 'D',
+    variables: [{ name: 'stable', type: 'time-aware' }],
+    panels: [],
+  })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  assert.equal(resolveCount, 1)
+  engine.setTimeRange({ from: 'now-1h', to: 'now' })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  assert.equal(resolveCount, 1)
+  assert.equal(engine.getVariable('stable')?.value, 'value-1')
+})
+
+test('external state store time range changes refresh marked variables and cascade downstream', async () => {
+  const resolvedNames: string[] = []
+  let valueCounter = 0
+
+  const cascadeType = defineVariableType({
+    id: 'cascade',
+    name: 'Cascade',
+    optionsSchema: {},
+    async resolve(config) {
+      resolvedNames.push(config.name)
+      valueCounter += 1
+      return [{ label: `${config.name}-${valueCounter}`, value: `${config.name}-${valueCounter}` }]
+    },
+  })
+
+  const stateStore = createMemoryDashboardStateStore()
+  const ds = makeDs('ds')
+  const engine = createDashboardEngine({
+    panels: [panel],
+    datasourcePlugins: [ds],
+    variableTypes: [cascadeType],
+    stateStore,
+  })
+
+  engine.load({
+    schemaVersion: 1, id: 'd', title: 'D',
+    variables: [
+      { name: 'varA', type: 'cascade', refreshOnTimeRangeChange: true },
+      { name: 'varB', type: 'cascade', dataRequest: { id: 'b', uid: 'ds', type: 'mock', query: '$varA' } },
+    ],
+    panels: [],
+  })
+  await new Promise<void>((r) => setTimeout(r, 50))
+  resolvedNames.length = 0
+
+  stateStore.setPatch({ timeRange: { from: 'now-2h', to: 'now' } })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  assert.ok(resolvedNames.includes('varA'), 'marked variable should refresh on external time range change')
+  assert.ok(resolvedNames.includes('varB'), 'downstream variable should cascade after marked variable changes')
+})
+
+test('previewDataRequest runs one request without mutating panel state', async () => {
+  let calls = 0
+  let lastOptions: QueryOptions | undefined
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    async query(options) {
+      calls += 1
+      lastOptions = options
+      return { columns: [{ name: 'value', type: 'number' }], rows: [[calls]] }
+    },
+  })
+  const constantType = defineVariableType({
+    id: 'constant',
+    name: 'Constant',
+    optionsSchema: {},
+    async resolve(config) {
+      const value = Array.isArray(config.defaultValue) ? config.defaultValue[0] : config.defaultValue
+      return value ? [{ label: value, value }] : []
+    },
+  })
+  const engine = createDashboardEngine({
+    panels: [panel],
+    datasourcePlugins: [datasource],
+    variableTypes: [constantType],
+  })
+
+  engine.load({
+    schemaVersion: 1, id: 'd', title: 'D',
+    variables: [{ name: 'env', type: 'constant', defaultValue: 'prod', options: {} }],
+    panels: [{
+      id: 'p1',
+      type: 'table',
+      gridPos: { x: 0, y: 0, w: 6, h: 4 },
+      dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', query: 'normal' }],
+    }],
+  })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  const before = engine.getPanel('p1')
+  const result = await engine.previewDataRequest(
+    { id: 'preview', uid: 'ds', type: 'mock', query: 'preview' },
+    { variablesOverride: { env: 'staging' } },
+  )
+
+  assert.deepEqual(result.rows, [[2]])
+  assert.equal(calls, 2)
+  assert.equal(lastOptions?.panelId, '')
+  assert.equal(lastOptions?.requestId, 'preview')
+  assert.equal(lastOptions?.query, 'preview')
+  assert.deepEqual(lastOptions?.variables, { env: 'staging' })
+  assert.equal(lastOptions?.panel, undefined)
+  assert.equal(engine.getPanel('p1'), before)
+})
+
+test('previewDataRequest includes panel context when panelId is provided', async () => {
+  let lastOptions: QueryOptions | undefined
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    async query(options) {
+      lastOptions = options
+      return { columns: [], rows: [] }
+    },
+  })
+  const engine = createDashboardEngine({
+    panels: [panel],
+    datasourcePlugins: [datasource],
+    variableTypes: [],
+  })
+
+  engine.load({
+    schemaVersion: 1, id: 'd', title: 'D',
+    variables: [],
+    panels: [{
+      id: 'p1',
+      type: 'table',
+      gridPos: { x: 0, y: 0, w: 6, h: 4 },
+      options: { color: 'red' },
+      dataRequests: [],
+    }],
+  })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  await engine.previewDataRequest(
+    { id: 'preview', uid: 'ds', type: 'mock' },
+    { panelId: 'p1' },
+  )
+
+  assert.equal(lastOptions?.panelId, 'p1')
+  assert.equal(lastOptions?.panel?.id, 'p1')
+  assert.deepEqual(lastOptions?.panelOptions, { color: 'red' })
+  assert.equal(lastOptions?.panelInstance?.id, 'p1')
+})
+
+test('previewDataRequest auth denial rejects without calling datasource', async () => {
+  let calls = 0
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    async query() {
+      calls += 1
+      return { columns: [], rows: [] }
+    },
+  })
+  const engine = createDashboardEngine({
+    panels: [panel],
+    datasourcePlugins: [datasource],
+    variableTypes: [],
+    authorize({ action }) {
+      if (action === 'datasource:query') return { allowed: false, reason: 'preview denied' }
+      return true
+    },
+  })
+
+  engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  await assert.rejects(
+    () => engine.previewDataRequest({ id: 'preview', uid: 'ds', type: 'mock' }),
+    /preview denied/,
+  )
+  assert.equal(calls, 0)
+})
+
+test('previewDataRequest can be aborted via caller signal', async () => {
+  const ac = new AbortController()
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    query(options) {
+      return new Promise<QueryResult>((_resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }))
+          return
+        }
+        options.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }))
+        })
+      })
+    },
+  })
+  const engine = createDashboardEngine({
+    panels: [panel],
+    datasourcePlugins: [datasource],
+    variableTypes: [],
+  })
+
+  engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
+  await new Promise<void>((r) => setTimeout(r, 50))
+
+  const promise = engine.previewDataRequest(
+    { id: 'preview', uid: 'ds', type: 'mock' },
+    { signal: ac.signal },
+  )
+  ac.abort()
+  await assert.rejects(promise, (err: Error) => err.name === 'AbortError')
 })

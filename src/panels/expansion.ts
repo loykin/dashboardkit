@@ -51,6 +51,8 @@ export const repeatExpander: PanelExpander = {
           type: panel.type,
           title: panel.title,
           gridPos: repeatGridPos(panel.gridPos, i, panel.repeatDirection, cols),
+          isRow: panel.isRow,
+          collapsed: panel.collapsed,
           variablesOverride: { [panel.repeat]: value },
           repeat: {
             varName: panel.repeat,
@@ -66,6 +68,31 @@ export const repeatExpander: PanelExpander = {
   },
 }
 
+// ─── Built-in row collapse expander ────────────────────────────────────────────
+
+export const rowCollapseExpander: PanelExpander = {
+  id: 'row-collapse',
+  expand(input) {
+    const rows = input
+      .filter((instance) => instance.config.isRow)
+      .sort((a, b) => a.gridPos.y - b.gridPos.y)
+
+    if (rows.length === 0) return [...input]
+
+    return input.filter((instance) => {
+      if (instance.config.isRow) return true
+
+      const row = [...rows]
+        .reverse()
+        .find((candidate) => candidate.gridPos.y < instance.gridPos.y)
+      if (!row?.config.collapsed) return true
+
+      const nextRow = rows.find((candidate) => candidate.gridPos.y > row.gridPos.y)
+      return nextRow ? instance.gridPos.y >= nextRow.gridPos.y : false
+    })
+  },
+}
+
 // ─── Expansion pipeline ─────────────────────────────────────────────────────────
 
 export function buildBasePanelInstances(cfg: DashboardConfig): PanelRuntimeInstance[] {
@@ -76,9 +103,11 @@ export function buildBasePanelInstances(cfg: DashboardConfig): PanelRuntimeInsta
     type: panel.type,
     title: panel.title,
     gridPos: panel.gridPos,
+    isRow: panel.isRow,
+    collapsed: panel.collapsed,
   }))
 }
 
 export function buildPanelExpanders(customExpanders: PanelExpander[]): PanelExpander[] {
-  return [repeatExpander, ...customExpanders]
+  return [repeatExpander, rowCollapseExpander, ...customExpanders]
 }

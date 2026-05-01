@@ -20,6 +20,35 @@ const datasource = defineDatasource({
   },
 })
 
+const datasourceWithCapabilities = defineDatasource({
+  uid: 'backend-with-capabilities',
+  type: 'mock',
+  optionsSchema: {},
+  async query() {
+    return { columns: [], rows: [] }
+  },
+  variable: {
+    async metricFindQuery() {
+      return [{ label: 'a', value: 'a' }]
+    },
+  },
+  editor: {
+    querySchema: {},
+    validateQuery() {
+      return { valid: true }
+    },
+  },
+  connector: {
+    configSchema: {},
+    healthCheck: async () => ({ ok: true }),
+  },
+  schema: {
+    async listNamespaces() {
+      return [{ id: 'default', name: 'Default' }]
+    },
+  },
+})
+
 test('datasource registry looks up plugins and validates request type', () => {
   const registry = createDatasourceRegistry([datasource])
 
@@ -44,6 +73,40 @@ test('datasource registry throws standard errors for missing and mismatched data
     () => registry.getForRequest({ id: 'main', uid: 'backend', type: 'sql', options: {}, hide: false, permissions: [] }),
     DatasourceTypeMismatchError,
   )
+})
+
+test('datasource registry exposes optional plugin capabilities', () => {
+  const registry = createDatasourceRegistry([datasource, datasourceWithCapabilities])
+
+  assert.equal(
+    registry.getVariableSupport('backend-with-capabilities'),
+    datasourceWithCapabilities.variable,
+  )
+  assert.equal(
+    registry.getEditorSupport('backend-with-capabilities'),
+    datasourceWithCapabilities.editor,
+  )
+  assert.equal(
+    registry.getConnectorSupport('backend-with-capabilities'),
+    datasourceWithCapabilities.connector,
+  )
+  assert.equal(
+    registry.getConnectorByType('mock'),
+    datasourceWithCapabilities.connector,
+  )
+  assert.equal(
+    registry.getSchemaSupport('backend-with-capabilities'),
+    datasourceWithCapabilities.schema,
+  )
+  assert.equal(registry.getVariableSupport('backend'), undefined)
+  assert.equal(registry.getEditorSupport('missing'), undefined)
+})
+
+test('datasource registry returns undefined connector when no plugin of that type has one', () => {
+  const registry = createDatasourceRegistry([datasource])
+
+  assert.equal(registry.getConnectorByType('mock'), undefined)
+  assert.equal(registry.getConnectorByType('missing'), undefined)
 })
 
 test('engine panel query uses datasource registry validation', async () => {

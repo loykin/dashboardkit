@@ -1,10 +1,21 @@
 import type { DataRequestConfig } from '../schema'
 import type { DatasourcePluginDef } from '../schema'
+import type {
+  DatasourceConnectorSupport,
+  DatasourceEditorSupport,
+  DatasourceSchemaSupport,
+  DatasourceVariableSupport,
+} from '../plugins'
 import { DatasourceNotFoundError, DatasourceTypeMismatchError } from './errors'
 
 export interface DatasourceRegistry {
   get(uid: string): DatasourcePluginDef | undefined
   getForRequest(request: DataRequestConfig): DatasourcePluginDef
+  getVariableSupport(uid: string): DatasourceVariableSupport<unknown> | undefined
+  getEditorSupport(uid: string): DatasourceEditorSupport<unknown, unknown> | undefined
+  getConnectorSupport(uid: string): DatasourceConnectorSupport<unknown> | undefined
+  getConnectorByType(type: string): DatasourceConnectorSupport<unknown> | undefined
+  getSchemaSupport(uid: string): DatasourceSchemaSupport<unknown> | undefined
   list(): DatasourcePluginDef[]
   has(uid: string): boolean
   toRecord(): Record<string, DatasourcePluginDef>
@@ -31,6 +42,27 @@ export function createDatasourceRegistry(
         throw new DatasourceTypeMismatchError(request.uid, request.type, datasource.type)
       }
       return datasource
+    },
+
+    getVariableSupport(uid) {
+      return byUid.get(uid)?.variable as DatasourceVariableSupport<unknown> | undefined
+    },
+
+    getEditorSupport(uid) {
+      return byUid.get(uid)?.editor as DatasourceEditorSupport<unknown, unknown> | undefined
+    },
+
+    getConnectorSupport(uid) {
+      return byUid.get(uid)?.connector as DatasourceConnectorSupport<unknown> | undefined
+    },
+
+    getConnectorByType(type) {
+      return [...byUid.values()].find((plugin) => plugin.type === type && plugin.connector)
+        ?.connector as DatasourceConnectorSupport<unknown> | undefined
+    },
+
+    getSchemaSupport(uid) {
+      return byUid.get(uid)?.schema as DatasourceSchemaSupport<unknown> | undefined
     },
 
     list() {
