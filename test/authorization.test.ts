@@ -6,11 +6,11 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '../dist/index.js'
+} from '@dashboard-engine/core'
 import type {
   DashboardInput,
   QueryOptions,
-} from '../dist/index.js'
+} from '@dashboard-engine/core'
 
 const panel = definePanel({
   id: 'table',
@@ -131,6 +131,52 @@ test('denied datasource query does not call the datasource plugin', async () => 
 
   assert.equal(queryCalls, 0)
   assert.equal(engine.getPanel('sales-table')?.error, 'blocked role cannot query datasource')
+})
+
+test('denied previewPanel datasource query does not call the datasource plugin', async () => {
+  let queryCalls = 0
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async query() {
+      queryCalls += 1
+      return { columns: [], rows: [] }
+    },
+  })
+  const engine = createDashboardEngine({
+    datasourcePlugins: [datasource],
+    panels: [panel],
+    variableTypes: [constantVariableType],
+    authContext: { subject: { id: 'blocked-1', roles: ['blocked'] } },
+    authorize({ action, authContext }) {
+      if (action === 'datasource:query' && authContext.subject?.roles?.includes('blocked')) {
+        return { allowed: false, reason: 'blocked role cannot query datasource' }
+      }
+      return true
+    },
+  })
+
+  engine.load(dashboardConfig())
+
+  await assert.rejects(
+    () => engine.previewPanel('sales-table', {
+      id: 'sales-table',
+      type: 'table',
+      title: 'Sales Preview',
+      gridPos: { x: 0, y: 0, w: 12, h: 6 },
+      dataRequests: [{
+        id: 'main',
+        uid: 'backend',
+        type: 'backend',
+        query: 'sales.preview',
+        options: {},
+        hide: false,
+        permissions: [],
+      }],
+    }),
+    /blocked role cannot query datasource/,
+  )
+  assert.equal(queryCalls, 0)
 })
 
 test('datasource plugin type must match data request type', async () => {

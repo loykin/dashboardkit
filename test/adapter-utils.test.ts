@@ -8,7 +8,7 @@ import {
   interpolateVariables,
   parseRelativeTime,
   parseTimeRange,
-} from '../dist/index.js'
+} from '@dashboard-engine/core'
 
 const variableConfig = {
   name: 'v',
@@ -17,6 +17,9 @@ const variableConfig = {
   multi: false,
   options: {},
   permissions: [],
+  sort: 'none' as const,
+  hide: 'none' as const,
+  includeAll: false,
 }
 
 const resolveContext = {

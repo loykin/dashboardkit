@@ -6,7 +6,11 @@ import type {
   AuthContext,
   AuthorizationDecision,
   AuthorizationRequest,
+  DashboardLoadOptions,
   DashboardStateStore,
+  PanelConfig,
+  PanelInput,
+  PanelPatchInput,
   PanelDependencyInfo,
   PanelExpander,
   PanelRuntimeInstance,
@@ -109,13 +113,14 @@ export interface CreateDashboardEngineOptions {
 
 export interface CoreEngineAPI {
   // Load config (accepts input type — defaults are filled in automatically)
-  load(config: import('./types').DashboardInput): void
+  load(config: import('./types').DashboardInput, options?: DashboardLoadOptions): void
   getConfig(): import('./types').DashboardConfig | null
 
   // Variables
   getVariable(name: string): import('./types').VariableState | undefined
   setVariable(name: string, value: string | string[]): void
   refreshVariables(): Promise<void>
+  refreshVariable(name: string): Promise<boolean>
   getVariableReadiness(names: readonly string[]): VariableReadiness
 
   // Panels
@@ -126,6 +131,19 @@ export interface CoreEngineAPI {
   getPanelReadiness(panelId: string): PanelReadiness | null
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
+  updatePanel(
+    panelId: string,
+    patch: PanelPatchInput | ((current: PanelConfig) => PanelInput),
+    options?: { refresh?: boolean; invalidateCache?: boolean },
+  ): Promise<void>
+  previewPanel(
+    panelId: string,
+    tempPanel: PanelInput,
+    options?: {
+      variablesOverride?: Record<string, string | string[]>
+      signal?: AbortSignal
+    },
+  ): Promise<{ data: unknown; rawData: QueryResult[] }>
 
   // Time range
   setTimeRange(range: { from: string; to: string }): void

@@ -51,6 +51,10 @@ export const VariableConfigSchema = z.object({
   dataRequest: DataRequestSchema.optional(),
   defaultValue: z.union([z.string(), z.array(z.string())]).nullable().default(null),
   multi: z.boolean().default(false),
+  includeAll: z.boolean().default(false),
+  allValue: z.string().optional(),
+  hide: z.enum(['none', 'label', 'variable']).default('none'),
+  sort: z.enum(['none', 'alphaAsc', 'alphaDesc', 'numericAsc', 'numericDesc']).default('none'),
   permissions: z.array(PermissionRuleSchema).default([]),
   options: z.record(z.unknown()).default({}),
 })
@@ -196,6 +200,9 @@ export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
 export type PanelConfig = z.infer<typeof PanelConfigSchema>
+// Input type (before parsing): fields with defaults are optional — use when constructing panel literals
+export type PanelInput = z.input<typeof PanelConfigSchema>
+export type PanelPatchInput = Partial<PanelInput>
 // Output type (after parsing): all defaults filled in — used internally by the engine
 export type DashboardConfig = z.infer<typeof DashboardConfigSchema>
 // Input type (before parsing): fields with defaults are optional — use this when writing a config literal
@@ -224,6 +231,13 @@ export interface DashboardStateStore {
   getSnapshot(): DashboardStateSnapshot
   setPatch(patch: DashboardStatePatch, options?: DashboardStateWriteOptions): void
   subscribe(listener: (snapshot: DashboardStateSnapshot) => void): () => void
+}
+
+export type DashboardLoadStatePolicy = 'preserve' | 'replace-dashboard-variables'
+
+export interface DashboardLoadOptions {
+  statePolicy?: DashboardLoadStatePolicy
+  state?: DashboardStateSnapshot
 }
 
 export type PermissionEffect = 'allow' | 'deny'

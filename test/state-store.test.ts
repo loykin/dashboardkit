@@ -7,9 +7,9 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '../dist/index.js'
-import { createUrlDashboardStateStore } from '../dist/url-state.js'
-import type { DashboardInput, QueryOptions } from '../dist/index.js'
+} from '@dashboard-engine/core'
+import { createUrlDashboardStateStore } from '@dashboard-engine/core/url-state'
+import type { DashboardInput, QueryOptions } from '@dashboard-engine/core'
 
 const panel = definePanel({
   id: 'table',
@@ -49,7 +49,7 @@ function config(): DashboardInput {
         type: 'table',
         title: 'Sales',
         gridPos: { x: 0, y: 0, w: 12, h: 6 },
-        dataRequests: [{ id: 'main', uid: 'backend', type: 'backend' }],
+        dataRequests: [{ id: 'main', uid: 'backend', type: 'backend', options: {}, hide: false, permissions: [] }],
         options: {},
       },
     ],
@@ -126,6 +126,8 @@ test('external state store changes drive datasource query variables', async () =
 })
 
 test('unknown URL variables are preserved but never sent to datasource queries', async () => {
+  // P1-2: 'JP' is not in the resolved options for country (constantVariableType returns defaultValue 'KR'),
+  // so country falls back to 'KR'. The unknown key 'injected' is preserved in stateStore.
   let lastOptions: QueryOptions | undefined
   const stateStore = createMemoryDashboardStateStore({
     variables: {
@@ -150,13 +152,18 @@ test('unknown URL variables are preserved but never sent to datasource queries',
   })
 
   engine.load(config())
+  // Wait for background variable resolution to complete before asserting.
+  // P1-2: 'JP' is not a valid option for country (options = ['KR']), so it falls back to 'KR'.
+  await new Promise<void>((r) => setTimeout(r, 50))
   await engine.refreshPanel('sales-table')
 
+  // 'injected' is preserved in stateStore (unknown key), 'country' is updated to 'KR' by P1-2
   assert.deepEqual(stateStore.getSnapshot().variables, {
-    country: 'JP',
+    country: 'KR',
     injected: 'DROP TABLE sales',
   })
-  assert.deepEqual(lastOptions?.variables, { country: 'JP' })
+  // Only dashboard-config variables are sent to datasource; 'injected' is excluded
+  assert.deepEqual(lastOptions?.variables, { country: 'KR' })
 })
 
 test('unknown variables injected after load do not reach datasource queries', async () => {

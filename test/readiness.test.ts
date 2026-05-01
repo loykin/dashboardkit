@@ -8,8 +8,8 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '../dist/index.js'
-import type { DashboardInput } from '../dist/index.js'
+} from '@dashboard-engine/core'
+import type { DashboardInput } from '@dashboard-engine/core'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -48,8 +48,8 @@ test('variable readiness tracks idle, loading, success, error, and missing state
   })
 
   varEngine.load([
-    { name: 'slow', type: 'slow', defaultValue: null, multi: false, options: {}, permissions: [] },
-    { name: 'bad', type: 'error', defaultValue: null, multi: false, options: {}, permissions: [] },
+    { name: 'slow', type: 'slow', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false },
+    { name: 'bad', type: 'error', defaultValue: null, multi: false, options: {}, permissions: [], sort: 'none' as const, hide: 'none' as const, includeAll: false },
   ])
 
   assert.deepEqual(varEngine.getVariableReadiness(['slow']), {

@@ -1,25 +1,24 @@
-import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
-import { buildVariableDAG } from '../query'
-import { parseRefs } from '../query'
+import { createStore } from 'zustand/vanilla'
+import { buildVariableDAG, parseRefs } from '../query'
 import type { BuiltinVariable } from './builtins'
 import type {
   AuthContext,
   DashboardConfig,
   DashboardStateStore,
   DataRequestConfig,
+  DatasourcePluginDef,
   VariableConfig,
   VariableOption,
   VariableReadiness,
-  VariableState,
-} from '../schema'
-import type {
-  DatasourcePluginDef,
   VariableResolveContext,
+  VariableState,
   VariableTypePluginDef,
 } from '../schema'
 import { buildCtxBuiltins } from './variable-context'
 import { createDatasourceRegistry } from '../datasources'
+
+export const ALL_OPTION_VALUE = '$__all'
 
 export interface VariableEngineOptions {
   variableTypes: VariableTypePluginDef[]
@@ -63,9 +62,67 @@ function valuesEqual(
 }
 
 function requestRefs(request: DataRequestConfig | undefined): string[] {
-  if (!request?.query) return []
-  return parseRefs(JSON.stringify(request.query)).refs
+  if (!request) return []
+  const queryText = request.query !== undefined ? JSON.stringify(request.query) : '{}'
+  const optionsText = request.options !== undefined ? JSON.stringify(request.options) : '{}'
+  return [...new Set([...parseRefs(queryText).refs, ...parseRefs(optionsText).refs])]
 }
+
+function requestRefText(request: DataRequestConfig): string {
+  const queryText = request.query !== undefined ? JSON.stringify(request.query) : '{}'
+  const optionsText = request.options !== undefined ? JSON.stringify(request.options) : '{}'
+  return `${queryText}\n${optionsText}`
+}
+
+// ─── Sort ──────────────────────────────────────────────────────────────────────
+
+function sortOptions(options: VariableOption[], sort: VariableConfig['sort']): VariableOption[] {
+  if (!sort || sort === 'none') return options
+  const sorted = [...options]
+  switch (sort) {
+    case 'alphaAsc':  return sorted.sort((a, b) => a.label.localeCompare(b.label))
+    case 'alphaDesc': return sorted.sort((a, b) => b.label.localeCompare(a.label))
+    case 'numericAsc':  return sorted.sort((a, b) => parseFloat(a.value) - parseFloat(b.value))
+    case 'numericDesc': return sorted.sort((a, b) => parseFloat(b.value) - parseFloat(a.value))
+    default: return sorted
+  }
+}
+
+// ─── Value selection ───────────────────────────────────────────────────────────
+
+export function chooseVariableValue(
+  config: VariableConfig,
+  current: string | string[] | undefined,
+  options: VariableOption[],
+): string | string[] {
+  const optionValues = new Set(options.map((o) => o.value))
+
+  if (config.multi) {
+    const curArr = Array.isArray(current) ? current : current ? [current] : []
+    const validCurrent = curArr.filter((v) => optionValues.has(v))
+    if (validCurrent.length > 0) return validCurrent
+
+    const defaultArr = Array.isArray(config.defaultValue)
+      ? config.defaultValue
+      : config.defaultValue ? [config.defaultValue] : []
+    const validDefault = defaultArr.filter((v) => optionValues.has(v))
+    if (validDefault.length > 0) return validDefault
+
+    return options[0] ? [options[0].value] : []
+  }
+
+  const curStr = Array.isArray(current) ? (current[0] ?? '') : (current ?? '')
+  if (curStr && optionValues.has(curStr)) return curStr
+
+  const defaultStr = Array.isArray(config.defaultValue)
+    ? (config.defaultValue[0] ?? '')
+    : (config.defaultValue ?? '')
+  if (defaultStr && optionValues.has(defaultStr)) return defaultStr
+
+  return options[0]?.value ?? ''
+}
+
+// ─── Engine ────────────────────────────────────────────────────────────────────
 
 export function createVariableEngine(options: VariableEngineOptions): VariableEngine {
   const vtMap = new Map(options.variableTypes.map((v) => [v.id, v]))
@@ -77,9 +134,6 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
   const store: StoreApi<Record<string, VariableState>> = createStore<Record<string, VariableState>>(() => ({}))
 
   function configuredVariables(): Record<string, string | string[]> {
-    // The state store is the single source of truth, but the variable engine
-    // only owns variables declared by the loaded DashboardConfig. Unknown
-    // URL/state values are preserved in the store and excluded from query ctx.
     const snapshot = options.stateStore.getSnapshot()
     const names = new Set(variableConfigs.map((v) => v.name))
     const variables: Record<string, string | string[]> = {}
@@ -87,6 +141,34 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       if (names.has(name)) variables[name] = value
     }
     return variables
+  }
+
+  // Expands $__all to allValue or array of concrete option values for datasource use
+  function expandedVariables(): Record<string, string | string[]> {
+    const raw = configuredVariables()
+    const state = store.getState()
+    const result: Record<string, string | string[]> = {}
+
+    for (const [name, value] of Object.entries(raw)) {
+      const vcfg = variableConfigs.find((v) => v.name === name)
+      const isAll =
+        value === ALL_OPTION_VALUE ||
+        (Array.isArray(value) && value.length === 1 && value[0] === ALL_OPTION_VALUE)
+
+      if (vcfg?.includeAll && isAll) {
+        if (vcfg.allValue !== undefined) {
+          result[name] = vcfg.allValue
+        } else {
+          result[name] = (state[name]?.options ?? [])
+            .filter((o) => o.value !== ALL_OPTION_VALUE)
+            .map((o) => o.value)
+        }
+      } else {
+        result[name] = value
+      }
+    }
+
+    return result
   }
 
   async function resolveOne(name: string): Promise<boolean> {
@@ -118,25 +200,24 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       const resolveCtx: VariableResolveContext = {
         datasourcePlugins: datasourceRegistry.toRecord(),
         builtins: buildCtxBuiltins(snapshot.timeRange, dashboard, options.builtinVariables ?? []),
-        variables: configuredVariables(),
+        variables: expandedVariables(),
         dashboard,
         authContext: options.getAuthContext(),
       }
 
-      const resolvedOptions = await vtDef.resolve(vcfg, vcfg.options as never, resolveCtx)
-      const cur = snapshot.variables[name]
-      const curArr = Array.isArray(cur) ? cur : cur ? [cur] : []
+      let resolvedOptions = await vtDef.resolve(vcfg, vcfg.options as never, resolveCtx)
 
-      let newValue: string | string[]
-      if (curArr.length > 0) {
-        newValue = vcfg.multi ? curArr : curArr[0]!
-      } else if (vcfg.defaultValue !== null && vcfg.defaultValue !== undefined) {
-        newValue = vcfg.defaultValue
-      } else {
-        newValue = vcfg.multi
-          ? (resolvedOptions[0] ? [resolvedOptions[0].value] : [])
-          : (resolvedOptions[0]?.value ?? '')
+      // P4-2: sort before injecting All
+      resolvedOptions = sortOptions(resolvedOptions, vcfg.sort)
+
+      // P4-1: inject All option at top after sort
+      if (vcfg.includeAll) {
+        resolvedOptions = [{ label: 'All', value: ALL_OPTION_VALUE }, ...resolvedOptions]
       }
+
+      // P1-2: choose valid value from resolved options
+      const cur = snapshot.variables[name]
+      const newValue = chooseVariableValue(vcfg, cur, resolvedOptions)
 
       store.setState((s) => ({
         ...s,
@@ -171,7 +252,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       sortedVarNames = buildVariableDAG(
         variables.map((v) => ({
           name: v.name,
-          ...(v.dataRequest?.query !== undefined ? { query: JSON.stringify(v.dataRequest.query) } : {}),
+          ...(v.dataRequest ? { query: requestRefText(v.dataRequest) } : {}),
         })),
       )
 
@@ -203,26 +284,36 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       return resolveOne(name)
     },
 
+    // P0-2: transitive cascade using BFS over sorted variable order
     async refreshDownstream(changedNames) {
-      const downstream = new Set<string>()
-      for (const changed of changedNames) {
-        const idx = sortedVarNames.indexOf(changed)
-        if (idx === -1) continue
-        for (const name of sortedVarNames.slice(idx + 1)) {
+      const queue = [...changedNames]
+      const visited = new Set(changedNames)
+      const changed: string[] = []
+
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        const currentIndex = sortedVarNames.indexOf(current)
+        if (currentIndex === -1) continue
+
+        for (const name of sortedVarNames.slice(currentIndex + 1)) {
+          if (visited.has(name)) continue
           const vcfg = variableConfigs.find((v) => v.name === name)
-          if (requestRefs(vcfg?.dataRequest).includes(changed)) downstream.add(name)
+          if (!requestRefs(vcfg?.dataRequest).includes(current)) continue
+
+          visited.add(name)
+          const didChange = await resolveOne(name)
+          if (didChange) {
+            changed.push(name)
+            queue.push(name)
+          }
         }
       }
 
-      const changed: string[] = []
-      for (const name of downstream) {
-        if (await resolveOne(name)) changed.push(name)
-      }
       return changed
     },
 
     getVariables() {
-      return configuredVariables()
+      return expandedVariables()
     },
 
     getBuiltins() {
@@ -246,12 +337,10 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
           waiting.push(name)
           continue
         }
-
         if (variable.status === 'error' || variable.error) {
           errors[name] = variable.error ?? 'variable resolution failed'
           continue
         }
-
         if (variable.status !== 'success') {
           waiting.push(name)
         }

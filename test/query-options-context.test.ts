@@ -6,8 +6,8 @@ import {
   defineDatasource,
   definePanel,
   defineVariableType,
-} from '../dist/index.js'
-import type { DashboardInput, QueryOptions } from '../dist/index.js'
+} from '@dashboard-engine/core'
+import type { DashboardInput, QueryOptions } from '@dashboard-engine/core'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 

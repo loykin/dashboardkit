@@ -6,8 +6,8 @@ import {
   createVariableEngine,
   defineDatasource,
   defineVariableType,
-} from '../dist/index.js'
-import type { DashboardConfig } from '../dist/index.js'
+} from '@dashboard-engine/core'
+import type { DashboardConfig } from '@dashboard-engine/core'
 
 const datasource = defineDatasource({
   uid: 'backend',
@@ -62,6 +62,11 @@ test('variable engine resolves variables without a dashboard engine', async () =
       type: 'query',
       defaultValue: 'KR',
       options: {},
+      multi: false,
+      permissions: [],
+      sort: 'none' as const,
+      hide: 'none' as const,
+      includeAll: false,
     },
   ])
 
@@ -73,7 +78,9 @@ test('variable engine resolves variables without a dashboard engine', async () =
   assert.deepEqual(varEngine.getState()['country']?.options, [{ label: 'KR', value: 'KR' }])
 })
 
-test('variable engine keeps explicit canonical values even when options differ', async () => {
+test('variable engine falls back to default when stale canonical value is not in resolved options', async () => {
+  // P1-2: stale value 'JP' is not in the resolved options ['KR'],
+  // so the engine falls back to the configured defaultValue 'KR'.
   const stateStore = createMemoryDashboardStateStore({ variables: { country: 'JP' } })
   const varEngine = createVariableEngine({
     variableTypes: [queryVariableType],
@@ -89,12 +96,17 @@ test('variable engine keeps explicit canonical values even when options differ',
       type: 'query',
       defaultValue: 'KR',
       options: {},
+      multi: false,
+      permissions: [],
+      sort: 'none' as const,
+      hide: 'none' as const,
+      includeAll: false,
     },
   ])
 
   const changed = await varEngine.refresh()
 
-  assert.deepEqual(changed, [])
-  assert.deepEqual(stateStore.getSnapshot().variables, { country: 'JP' })
-  assert.equal(varEngine.getState()['country']?.value, 'JP')
+  assert.deepEqual(changed, ['country'])
+  assert.deepEqual(stateStore.getSnapshot().variables, { country: 'KR' })
+  assert.equal(varEngine.getState()['country']?.value, 'KR')
 })

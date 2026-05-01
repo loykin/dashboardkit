@@ -6,7 +6,7 @@ import {
   DashboardConfigSchema,
   mergeDashboardStateSnapshots,
   resolveDashboardInitialState,
-} from '../dist/index.js'
+} from '@dashboard-engine/core'
 
 test('initial state resolver applies URL over saved over defaults', () => {
   const config = DashboardConfigSchema.parse({

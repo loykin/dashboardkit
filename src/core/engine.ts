@@ -4,9 +4,12 @@ import { parseRefs } from '../query'
 import type {
   DashboardConfig,
   DashboardInput,
+  DashboardLoadOptions,
   DataRequestConfig,
   VariableConfig,
   VariableState,
+  PanelConfig,
+  PanelInput,
   PanelState,
   PanelDependencyInfo,
   PanelReadiness,
@@ -17,14 +20,14 @@ import type {
   PanelRuntimeInstance,
   PanelExpander,
 } from '../schema'
-import { DashboardConfigSchema } from '../schema'
+import { DashboardConfigSchema, PanelConfigSchema } from '../schema'
 import { createMemoryDashboardStateStore } from './state'
 import type {
   PanelPluginDef,
   CoreEngineAPI,
   CreateDashboardEngineOptions,
 } from '../schema'
-import { createVariableEngine, defaultVariableValue, flattenVariables } from '../variables'
+import { createVariableEngine, defaultVariableValue } from '../variables'
 import { createAuthorization } from './authorization'
 import { buildBasePanelInstances, buildPanelExpanders } from '../panels'
 import { createDatasourceRegistry } from '../datasources'
@@ -41,11 +44,13 @@ interface EngineStore {
   authContext: AuthContext
 }
 
-// ─── Query Cache ────────────────────────────────────────────────────────────────
+// ─── Panel Cache ────────────────────────────────────────────────────────────────
 
-interface CacheEntry {
-  data: QueryResult
-  ts: number
+interface PanelCacheEntry {
+  panelId: string
+  requestId: string
+  datasourceUid: string
+  value: QueryResult
 }
 
 // ─── Engine Implementation ──────────────────────────────────────────────────────
@@ -65,7 +70,10 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   const datasourceRegistry = createDatasourceRegistry(dsDefs)
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
 
-  const cache = new Map<string, CacheEntry>()
+  // P0-3: metadata-based cache + secondary index by panelId
+  const cache = new Map<string, PanelCacheEntry>()
+  const cacheKeysByPanelId = new Map<string, Set<string>>()
+
   const panelAbortControllers = new Map<string, AbortController>()
   const panelExpanders: PanelExpander[] = buildPanelExpanders(customPanelExpanders)
 
@@ -125,24 +133,38 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   }
 
   function cacheKey(
+    panelId: string,
+    requestId: string,
     dsUid: string,
     dataRequestJson: string,
     variables: Record<string, string | string[]>,
     tr?: { from: string; to: string },
   ): string {
     const authKey = store.getState().authContext.subject?.id ?? 'anonymous'
-    return `${dsUid}::${authKey}::${dataRequestJson}::${stableJson(variables)}::${tr?.from ?? ''}::${tr?.to ?? ''}`
+    return `${panelId}::${requestId}::${dsUid}::${authKey}::${dataRequestJson}::${stableJson(variables)}::${tr?.from ?? ''}::${tr?.to ?? ''}`
   }
 
-  function invalidatePanelCache(panelIds: string[]) {
+  function setCache(key: string, entry: PanelCacheEntry): void {
+    cache.set(key, entry)
+    let keys = cacheKeysByPanelId.get(entry.panelId)
+    if (!keys) {
+      keys = new Set()
+      cacheKeysByPanelId.set(entry.panelId, keys)
+    }
+    keys.add(key)
+  }
+
+  function clearCache(): void {
+    cache.clear()
+    cacheKeysByPanelId.clear()
+  }
+
+  function invalidatePanelCache(panelIds: string[]): void {
     for (const pid of panelIds) {
-      const pcfg = findPanelInstance(pid)?.config ?? store.getState().config?.panels.find((p) => p.id === pid)
-      if (!pcfg) continue
-      for (const request of pcfg.dataRequests) {
-        for (const key of [...cache.keys()]) {
-          if (key.startsWith(`${request.uid}::`)) cache.delete(key)
-        }
-      }
+      const keys = cacheKeysByPanelId.get(pid)
+      if (!keys) continue
+      for (const key of keys) cache.delete(key)
+      cacheKeysByPanelId.delete(pid)
     }
   }
 
@@ -150,7 +172,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   async function ensurePanelDataRequestAuthorized(
     cfg: DashboardConfig,
-    pcfg: import('../schema/types').PanelConfig,
+    pcfg: PanelConfig,
     dataRequest: DataRequestConfig,
     datasourceUid: string,
   ): Promise<void> {
@@ -212,31 +234,30 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return store.getState().panelInstances.find((p) => p.id === instanceId)
   }
 
+  // P0-1: shared helper for exact variable reference detection
+  function collectPanelRefs(panel: PanelConfig): Set<string> {
+    const refs = new Set<string>()
+    if (panel.title) {
+      for (const ref of parseRefs(panel.title).refs) refs.add(ref)
+    }
+    if (panel.repeat) refs.add(panel.repeat)
+    for (const request of panel.dataRequests) {
+      const queryText = request.query !== undefined ? JSON.stringify(request.query) : '{}'
+      const optionsText = request.options !== undefined ? JSON.stringify(request.options) : '{}'
+      for (const ref of parseRefs(queryText).refs) refs.add(ref)
+      for (const ref of parseRefs(optionsText).refs) refs.add(ref)
+    }
+    const panelOptionsText = panel.options !== undefined ? JSON.stringify(panel.options) : '{}'
+    for (const ref of parseRefs(panelOptionsText).refs) refs.add(ref)
+    return refs
+  }
+
   function panelRefsVar(instance: PanelRuntimeInstance, varName: string): boolean {
-    const panel = instance.config
-    const inTitle = panel.title ? parseRefs(panel.title).refs.includes(varName) : false
-    const inDataRequests = panel.dataRequests.some((r) => JSON.stringify(r).includes('$' + varName))
-    return inTitle || inDataRequests || panel.repeat === varName
+    return collectPanelRefs(instance.config).has(varName)
   }
 
   function getPanelDependenciesForInstance(instance: PanelRuntimeInstance): PanelDependencyInfo {
-    const direct = new Set<string>()
-    const panel = instance.config
-
-    if (panel.title) {
-      for (const ref of parseRefs(panel.title).refs) direct.add(ref)
-    }
-
-    for (const request of panel.dataRequests) {
-      if (request.query !== undefined) {
-        for (const ref of parseRefs(JSON.stringify(request.query)).refs) direct.add(ref)
-      }
-      for (const ref of parseRefs(JSON.stringify(request.options)).refs) direct.add(ref)
-    }
-
-    if (panel.repeat) direct.add(panel.repeat)
-
-    const directVariables = [...direct]
+    const directVariables = [...collectPanelRefs(instance.config)]
     return { directVariables, requiredVariables: directVariables }
   }
 
@@ -302,8 +323,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   function assertCurrentPanelRequest(panelId: string, controller: AbortController): void {
     if (!isCurrentPanelRequest(panelId, controller)) {
-      throw Object.assign(new Error('AbortError'), { name: 'AbortError' })
+      throw abortError()
     }
+  }
+
+  function abortError(): Error {
+    return Object.assign(new Error('AbortError'), { name: 'AbortError' })
   }
 
   function startPanelRequest(panelId: string, supersede: boolean): AbortController | null {
@@ -325,20 +350,21 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   function buildPanelQueryContext(instance: PanelRuntimeInstance) {
     const tr = stateStore.getSnapshot().timeRange
     const effectiveVariables = { ...buildCtxVariables(), ...(instance.variablesOverride ?? {}) }
-    const flatVars = flattenVariables(effectiveVariables)
-    return { tr, flatVars }
+    return { tr, variables: effectiveVariables }
   }
 
   function readPanelCache(
+    panelId: string,
     activeRequests: DataRequestConfig[],
-    flatVars: Record<string, string | string[]>,
+    variables: Record<string, string | string[]>,
     tr: { from: string; to: string } | undefined,
   ): QueryResult[] | null {
     const results: QueryResult[] = []
     for (const request of activeRequests) {
-      const cached = cache.get(cacheKey(request.uid, JSON.stringify(request), flatVars, tr))
+      const key = cacheKey(panelId, request.id, request.uid, JSON.stringify(request), variables, tr)
+      const cached = cache.get(key)
       if (!cached) return null
-      results.push({ ...cached.data, requestId: request.id })
+      results.push({ ...cached.value, requestId: request.id })
     }
     return results
   }
@@ -362,7 +388,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     cfg: DashboardConfig,
     instance: PanelRuntimeInstance,
     activeRequests: DataRequestConfig[],
-    flatVars: Record<string, string | string[]>,
+    variables: Record<string, string | string[]>,
     tr: { from: string; to: string } | undefined,
     controller: AbortController,
   ): Promise<QueryResult[]> {
@@ -370,7 +396,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     return Promise.all(
       activeRequests.map(async (request) => {
         const dsDef = datasourceRegistry.getForRequest(request)
-        const key = cacheKey(request.uid, JSON.stringify(request), flatVars, tr)
+        const key = cacheKey(panelId, request.id, request.uid, JSON.stringify(request), variables, tr)
         const result = await dsDef.query({
           dataRequest: request,
           dashboardId: cfg.id,
@@ -378,7 +404,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           requestId: request.id,
           ...(request.query !== undefined ? { query: request.query } : {}),
           requestOptions: request.options,
-          variables: flatVars,
+          variables,
           datasourceOptions: dsDef.options ?? ({} as never),
           authContext: store.getState().authContext,
           ...(tr !== undefined ? { timeRange: tr } : {}),
@@ -389,7 +415,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           panelInstance: instance,
         })
         assertCurrentPanelRequest(panelId, controller)
-        cache.set(key, { data: result, ts: Date.now() })
+        setCache(key, { panelId, requestId: request.id, datasourceUid: request.uid, value: result })
         return { ...result, requestId: request.id }
       }),
     )
@@ -413,7 +439,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     if (!controller) return
 
     try {
-      const { flatVars, tr } = buildPanelQueryContext(instance)
+      const { variables, tr } = buildPanelQueryContext(instance)
 
       for (const request of activeRequests) {
         datasourceRegistry.getForRequest(request)
@@ -421,7 +447,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }
       assertCurrentPanelRequest(panelId, controller)
 
-      const cached = readPanelCache(activeRequests, flatVars, tr)
+      const cached = readPanelCache(panelId, activeRequests, variables, tr)
       if (cached) {
         assertCurrentPanelRequest(panelId, controller)
         const panelDef = panelMap.get(pcfg.type)
@@ -434,7 +460,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       }))
       emit({ type: 'panel-loading', panelId })
 
-      const results = await fetchPanelRequests(panelId, cfg, instance, activeRequests, flatVars, tr, controller)
+      const results = await fetchPanelRequests(panelId, cfg, instance, activeRequests, variables, tr, controller)
 
       assertCurrentPanelRequest(panelId, controller)
       const panelDef = panelMap.get(pcfg.type)
@@ -504,7 +530,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
     if (timeChanged && snapshot.timeRange) {
       emit({ type: 'time-range-changed', range: snapshot.timeRange })
-      cache.clear()
+      clearCache()
     }
 
     if (changedVars.length > 0) {
@@ -535,12 +561,35 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   // ─── Public API ───────────────────────────────────────────────────────────────
 
   const api: CoreEngineAPI = {
-    load(config: DashboardInput) {
+    // P2-1: load with optional state policy
+    load(config: DashboardInput, loadOptions?: DashboardLoadOptions) {
       const parsed = DashboardConfigSchema.parse(config)
-      const defaultPatch = buildDefaultStatePatch(parsed)
+      const { statePolicy = 'preserve', state: explicitState } = loadOptions ?? {}
+
       abortPanelRequests()
       suppressDashboardSnapshotEvents = true
-      if (Object.keys(defaultPatch).length > 0) stateStore.setPatch(defaultPatch)
+
+      if (statePolicy === 'replace-dashboard-variables') {
+        stateStore.setPatch({
+          variables: Object.fromEntries(
+            parsed.variables.map((v) => [v.name, defaultVariableValue(v) as string | string[]]),
+          ),
+        })
+      }
+
+      if (explicitState) {
+        stateStore.setPatch(explicitState)
+      }
+
+      if (statePolicy === 'preserve' && !explicitState) {
+        const defaultPatch = buildDefaultStatePatch(parsed)
+        if (Object.keys(defaultPatch).length > 0) stateStore.setPatch(defaultPatch)
+      } else {
+        // always fill in any vars still missing after explicit patches
+        const defaultPatch = buildDefaultStatePatch(parsed)
+        if (Object.keys(defaultPatch).length > 0) stateStore.setPatch(defaultPatch)
+      }
+
       const snapshot = stateStore.getSnapshot()
       lastDashboardSnapshot = snapshot
 
@@ -560,7 +609,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       varEngine.load(parsed.variables)
       store.setState({ variables: varEngine.getState() })
       syncPanelInstances()
-      cache.clear()
+      clearCache()
 
       void (async () => {
         try {
@@ -580,6 +629,39 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     refreshVariables() { return refreshVariables({ emitChanges: true }) },
+
+    // P1-1: refresh a single variable and cascade downstream
+    async refreshVariable(name) {
+      if (!store.getState().config || !store.getState().variables[name]) return false
+
+      suppressDashboardSnapshotEvents = true
+      let directChanged = false
+      let downstreamChanged: string[] = []
+      try {
+        directChanged = await varEngine.refreshOne(name)
+        if (directChanged) {
+          downstreamChanged = await varEngine.refreshDownstream([name])
+        }
+        syncPanelInstances()
+      } finally {
+        suppressDashboardSnapshotEvents = false
+      }
+
+      const anyChanged = directChanged || downstreamChanged.length > 0
+      if (anyChanged) {
+        const allChanged = directChanged ? [name, ...downstreamChanged] : downstreamChanged
+        for (const changedName of allChanged) {
+          const value = stateStore.getSnapshot().variables[changedName]
+          if (value !== undefined) emit({ type: 'variable-changed', name: changedName, value })
+        }
+        const affected = [...new Set(allChanged.flatMap((n) => panelsReferencingVar(n)))]
+        invalidatePanelCache(affected)
+        await Promise.all(affected.map((panelId) => executePanel(panelId)))
+      }
+
+      return anyChanged
+    },
+
     getVariableReadiness(names) { return varEngine.getVariableReadiness(names) },
     getPanel(panelId) { return store.getState().panels[panelId] },
     getPanelInstances() { return [...store.getState().panelInstances] },
@@ -606,6 +688,112 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     },
 
     async refreshAll() { await refreshAllPanels() },
+
+    // P3-1: update a single panel config without full dashboard reload
+    async updatePanel(panelId, patch, options = {}) {
+      const { refresh = true, invalidateCache = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      const isOriginPanel = cfg.panels.some((p) => p.id === panelId)
+      if (!isOriginPanel) {
+        throw Object.assign(
+          new Error(`Panel "${panelId}" is not an origin panel id or does not exist`),
+          { name: 'PanelNotFoundError' },
+        )
+      }
+
+      const currentPanel = cfg.panels.find((p) => p.id === panelId)!
+      const nextPanelInput: PanelInput = typeof patch === 'function'
+        ? patch(currentPanel)
+        : { ...currentPanel, ...patch }
+
+      if (nextPanelInput.id !== panelId) {
+        throw Object.assign(new Error('updatePanel cannot change panel id'), { name: 'PanelValidationError' })
+      }
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        panels: cfg.panels.map((p) => p.id === panelId ? nextPanelInput : p),
+      })
+
+      store.setState((s) => ({
+        config: s.config ? nextConfig : null,
+      }))
+
+      syncPanelInstances()
+
+      const affectedIds = store.getState().panelInstances
+        .filter((inst) => inst.originId === panelId)
+        .map((inst) => inst.id)
+
+      for (const id of affectedIds) {
+        panelAbortControllers.get(id)?.abort()
+        panelAbortControllers.delete(id)
+      }
+
+      if (invalidateCache) invalidatePanelCache(affectedIds)
+      if (refresh) await Promise.all(affectedIds.map((id) => executePanel(id)))
+    },
+
+    // P3-2: run a temporary query without mutating panel state or cache
+    async previewPanel(panelId: string, tempPanel: PanelInput, options = {}) {
+      const { variablesOverride = {}, signal: callerSignal } = options
+      const cfg = store.getState().config
+      if (!cfg) throw new Error('no dashboard loaded')
+
+      const parsedTempPanel = PanelConfigSchema.parse(tempPanel)
+      const activeRequests = parsedTempPanel.dataRequests.filter((r) => !r.hide)
+      if (activeRequests.length === 0) return { data: null as unknown, rawData: [] }
+
+      const effectiveVariables = { ...buildCtxVariables(), ...variablesOverride }
+      const tr = stateStore.getSnapshot().timeRange
+
+      const controller = new AbortController()
+      if (callerSignal) {
+        if (callerSignal.aborted) throw abortError()
+        callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+      }
+
+      const previewInstance: PanelRuntimeInstance = findPanelInstance(panelId) ?? {
+        id: panelId,
+        originId: panelId,
+        config: parsedTempPanel,
+        type: parsedTempPanel.type,
+        title: parsedTempPanel.title,
+        gridPos: parsedTempPanel.gridPos,
+      }
+
+      const rawData = await Promise.all(
+        activeRequests.map(async (request) => {
+          const dsDef = datasourceRegistry.getForRequest(request)
+          await ensurePanelDataRequestAuthorized(cfg, parsedTempPanel, request, request.uid)
+          const result = await dsDef.query({
+            dataRequest: request,
+            dashboardId: cfg.id,
+            panelId,
+            requestId: request.id,
+            ...(request.query !== undefined ? { query: request.query } : {}),
+            requestOptions: request.options,
+            variables: effectiveVariables,
+            datasourceOptions: dsDef.options ?? ({} as never),
+            authContext: store.getState().authContext,
+            ...(tr !== undefined ? { timeRange: tr } : {}),
+            signal: controller.signal,
+            builtins: varEngine.getBuiltins(),
+            panel: parsedTempPanel,
+            panelOptions: parsedTempPanel.options,
+            panelInstance: previewInstance,
+          })
+          return { ...result, requestId: request.id }
+        }),
+      )
+
+      const panelDef = panelMap.get(parsedTempPanel.type)
+      const data = panelDef?.transform ? panelDef.transform(rawData) : rawData
+      return { data, rawData }
+    },
+
     setTimeRange(range) { stateStore.setPatch({ timeRange: range }) },
     getTimeRange() { return stateStore.getSnapshot().timeRange },
     setRefresh(refresh) { stateStore.setPatch({ refresh }) },
@@ -613,7 +801,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     setAuthContext(context) {
       store.setState({ authContext: context })
-      cache.clear()
+      clearCache()
       void api.refreshVariables()
     },
 
