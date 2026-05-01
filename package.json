@@ -30,7 +30,7 @@
     "build": "tsc -p tsconfig.build.json --noEmit && eslint src --ext .ts,.tsx && tsup",
     "build:js": "tsup",
     "dev": "concurrently \"tsup --watch\" \"pnpm --filter playground dev\"",
-    "test": "pnpm type-check && pnpm build && node --test test/*.test.ts",
+    "test": "pnpm type-check && pnpm build && node --experimental-strip-types --test test/*.test.ts",
     "type-check": "tsc -p tsconfig.json && tsc -p playground/tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix"
