@@ -12,10 +12,10 @@ import { SupersetStyleTab } from './tabs/SupersetStyleTab'
 import { NavigationLifecycleTab } from './tabs/NavigationLifecycleTab'
 
 const TABS = [
-  { id: 'navigation-lifecycle', label: 'Navigation Lifecycle', content: <NavigationLifecycleTab /> },
-  { id: 'grafana-style', label: 'Grafana Style', content: <GrafanaStyleTab /> },
-  { id: 'superset-style', label: 'Superset Style', content: <SupersetStyleTab /> },
-  { id: 'dashboard', label: '🗂 Dashboard Demo', content: <DashboardDemoTab /> },
+  { id: 'navigation-lifecycle', label: 'Builder Lifecycle', content: <NavigationLifecycleTab /> },
+  { id: 'grafana-style', label: 'Operations Viewer', content: <GrafanaStyleTab /> },
+  { id: 'superset-style', label: 'Explore Cross-filter', content: <SupersetStyleTab /> },
+  { id: 'dashboard', label: 'Grid Basics', content: <DashboardDemoTab /> },
   { id: 'authorization', label: 'Authorization', content: <AuthorizationTab /> },
   { id: 'url-state', label: 'URL State', content: <UrlStateTab /> },
   { id: 'parse-refs', label: 'parseRefs()', content: <ParseRefsTab /> },
@@ -29,7 +29,7 @@ type TabId = (typeof TABS)[number]['id']
 
 function tabFromSearch(): TabId {
   const tab = new URLSearchParams(window.location.search).get('tab')
-  return TABS.some((item) => item.id === tab) ? tab as TabId : 'dashboard'
+  return TABS.some((item) => item.id === tab) ? tab as TabId : 'navigation-lifecycle'
 }
 
 export default function App() {

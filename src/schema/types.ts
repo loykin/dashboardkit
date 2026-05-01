@@ -166,13 +166,7 @@ export const DashboardConfigSchema = z.object({
   variables: z.array(VariableConfigSchema).default([]),
 
   // panel list; gridPos included
-  panels: z.array(PanelConfigSchema).refine(
-    (panels) => panels.every((panel) => {
-      const ids = panel.dataRequests.map((request) => request.id)
-      return ids.length === new Set(ids).size
-    }),
-    'panel data request ids must be unique within each panel',
-  ),
+  panels: z.array(PanelConfigSchema),
 
   // global grid config (per-panel position is in panel.gridPos)
   layout: z.object({
@@ -194,10 +188,41 @@ export const DashboardConfigSchema = z.object({
 
   // dashboard-level permission defaults
   permissions: z.array(PermissionRuleSchema).default([]),
+}).superRefine((dashboard, ctx) => {
+  const variableNames = dashboard.variables.map((variable) => variable.name)
+  if (variableNames.length !== new Set(variableNames).size) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['variables'],
+      message: 'variable names must be unique',
+    })
+  }
+
+  const panelIds = dashboard.panels.map((panel) => panel.id)
+  if (panelIds.length !== new Set(panelIds).size) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['panels'],
+      message: 'panel ids must be unique',
+    })
+  }
+
+  dashboard.panels.forEach((panel, panelIndex) => {
+    const requestIds = panel.dataRequests.map((request) => request.id)
+    if (requestIds.length !== new Set(requestIds).size) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['panels', panelIndex, 'dataRequests'],
+        message: 'panel data request ids must be unique within each panel',
+      })
+    }
+  })
 })
 
 // ─── Inferred TypeScript Types ────────────────────────────────────────────────
-export type VariableConfig = z.infer<typeof VariableConfigSchema>
+export type VariableConfig = z.output<typeof VariableConfigSchema>
+export type VariableInput = z.input<typeof VariableConfigSchema>
+export type VariablePatchInput = Partial<VariableInput>
 export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
 export type DataRequestConfig = z.output<typeof DataRequestSchema>
@@ -219,9 +244,13 @@ export type PanelPatchInput = Omit<Partial<PanelInput>, 'dataRequests'> & {
 export type DashboardConfig = z.output<typeof DashboardConfigSchema>
 type DashboardSchemaInput = z.input<typeof DashboardConfigSchema>
 // Input type (before parsing): use this when writing a config literal.
-export type DashboardInput = Omit<DashboardSchemaInput, 'panels'> & {
+export type DashboardInput = Omit<DashboardSchemaInput, 'panels' | 'variables'> & {
+  variables?: VariableInput[]
   panels: PanelInput[]
 }
+export type DashboardPatchInput = Partial<
+  Omit<DashboardInput, 'schemaVersion' | 'id' | 'panels' | 'variables'>
+>
 
 export interface DashboardStateSnapshot {
   variables: Record<string, string | string[]>

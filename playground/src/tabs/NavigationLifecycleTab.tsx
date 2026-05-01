@@ -58,6 +58,29 @@ const datasource = defineDatasource({
   uid: 'lifecycle-api',
   type: 'backend',
   async query(options) {
+    if (String(options.query ?? '').startsWith('builder.custom')) {
+      const team = String(options.variables.team ?? '-')
+      const rawQuery = String(options.query ?? '')
+      const effectiveQuery = rawQuery.replace(/\$team/g, team)
+      return {
+        columns: [
+          { name: 'scope', type: 'string' },
+          { name: 'value', type: 'number' },
+          { name: 'detail', type: 'string' },
+        ],
+        rows: [
+          ['effective-query', 77 + team.length, effectiveQuery],
+          ['raw-query', rawQuery.length, rawQuery],
+          ['team', team, JSON.stringify(options.variables)],
+          ['variable-count', Object.keys(options.variables).length, JSON.stringify(options.variables)],
+        ],
+        meta: {
+          dashboardId: options.dashboardId,
+          variables: options.variables,
+          timeRange: options.timeRange,
+        },
+      }
+    }
     const rows = buildRows(options)
     return {
       columns: [
@@ -80,10 +103,11 @@ function buildRows(options: QueryOptions): unknown[][] {
   const seed = dashboard === 'ops-dashboard' ? 40 : 90
   const region = String(options.variables.region ?? '-')
   const tenant = String(options.variables.tenant ?? '-')
+  const team = String(options.variables.team ?? '')
   const query = String(options.query ?? '')
   return Array.from({ length: 4 }, (_, index) => [
     dashboard,
-    seed + index * 7 + region.length + tenant.length,
+    seed + index * 7 + region.length + tenant.length + team.length,
     query,
   ])
 }
@@ -166,10 +190,13 @@ export function NavigationLifecycleTab() {
     datasourcePlugins: [datasource],
     variableTypes: [staticVariable],
   }), [stateStore])
+  const [savedDashboards, setSavedDashboards] = useState<Record<DashboardKey, DashboardInput>>(() => ({ ...dashboards }))
   const [dashboardKey, setDashboardKey] = useState<DashboardKey>(() => keyFromUrl())
-  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(dashboards[dashboardKey].panels[0]?.id ?? null)
+  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(savedDashboards[dashboardKey].panels[0]?.id ?? null)
   const [dirty, setDirty] = useState(false)
-  const config = dashboards[dashboardKey]
+  const [savedJson, setSavedJson] = useState('')
+  const [builderStatus, setBuilderStatus] = useState('')
+  const config = savedDashboards[dashboardKey]
 
   // Load boundary — only entry point for external config into engine
   useLoadDashboard(engine, config, { statePolicy: 'replace-dashboard-variables' })
@@ -180,19 +207,108 @@ export function NavigationLifecycleTab() {
     const sync = () => {
       const next = keyFromUrl()
       setDashboardKey(next)
-      setSelectedPanelId(dashboards[next].panels[0]?.id ?? null)
+      setSelectedPanelId(savedDashboards[next].panels[0]?.id ?? null)
       setDirty(false)
     }
     window.addEventListener('popstate', sync)
     return () => window.removeEventListener('popstate', sync)
-  }, [])
+  }, [savedDashboards])
+
+  function markChanged(message: string) {
+    setDirty(true)
+    setBuilderStatus(message)
+  }
+
+  async function addPanel() {
+    const id = `custom-${Date.now().toString(36)}`
+    const hasTeam = engine.getConfig()?.variables.some((variable) => variable.name === 'team') ?? false
+    await engine.addPanel({
+      id,
+      type: 'table',
+      title: hasTeam ? 'Custom query for $team' : 'Custom query',
+      gridPos: { x: 12, y: 0, w: 12, h: 6 },
+      options: { title: hasTeam ? 'Custom query for $team' : 'Custom query' },
+      dataRequests: [{
+        id: 'main',
+        uid: 'lifecycle-api',
+        type: 'backend',
+        query: hasTeam ? 'builder.custom.$team' : 'builder.custom',
+      }],
+    })
+    setSelectedPanelId(id)
+    markChanged(`Added panel ${id}`)
+  }
+
+  async function removeSelectedPanel() {
+    if (!selectedPanelId) return
+    await engine.removePanel(selectedPanelId)
+    setSelectedPanelId(engine.getPanelInstances()[0]?.originId ?? null)
+    markChanged(`Removed panel ${selectedPanelId}`)
+  }
+
+  async function addVariable() {
+    const cfg = engine.getConfig()
+    if (!cfg || cfg.variables.some((variable) => variable.name === 'team')) return
+    await engine.addVariable({
+      name: 'team',
+      type: 'static',
+      defaultValue: 'core',
+      options: { values: ['core', 'growth'] },
+    })
+    markChanged('Added variable team')
+  }
+
+  async function removeVariable() {
+    const cfg = engine.getConfig()
+    if (!cfg || !cfg.variables.some((variable) => variable.name === 'team')) return
+    await Promise.all(
+      cfg.panels
+        .filter((panel) => JSON.stringify(panel).includes('$team'))
+        .map((panel) => engine.updatePanel(panel.id, {
+          title: panel.title.replace(/\$team/g, 'team'),
+          options: { ...panel.options, title: String(panel.options.title ?? panel.title).replace(/\$team/g, 'team') },
+          dataRequests: panel.dataRequests.map((request) => ({
+            ...request,
+            query: typeof request.query === 'string' ? request.query.replace(/\$team/g, 'team') : request.query,
+          })),
+        }, { refresh: false })),
+    )
+    await engine.removeVariable('team')
+    markChanged('Removed variable team')
+  }
+
+  async function updateTitle() {
+    const cfg = engine.getConfig()
+    if (!cfg) return
+    await engine.updateDashboard({ title: `${cfg.title} *` })
+    markChanged('Updated dashboard title')
+  }
+
+  function saveDashboard() {
+    const cfg = engine.getConfig()
+    if (!cfg) return
+    setSavedDashboards((current) => ({ ...current, [dashboardKey]: cfg as DashboardInput }))
+    setSavedJson(JSON.stringify(cfg, null, 2))
+    setDirty(false)
+    setBuilderStatus(`Saved ${cfg.title}`)
+  }
+
+  function reloadSaved() {
+    engine.load(savedDashboards[dashboardKey], { statePolicy: 'replace-dashboard-variables' })
+    setSelectedPanelId(savedDashboards[dashboardKey].panels[0]?.id ?? null)
+    setDirty(false)
+    setBuilderStatus('Reloaded saved config')
+  }
+
+  const currentConfig = engine.getConfig()
+  const hasTeamVariable = currentConfig?.variables.some((variable) => variable.name === 'team') ?? false
 
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-base font-semibold">Navigation lifecycle dashboard</h2>
+        <h2 className="text-base font-semibold">Builder lifecycle</h2>
         <p className="text-sm text-gray-500">
-          Switch dashboards, use browser back/forward, edit a panel, and verify variables/query state reload with the active dashboard.
+          Load a dashboard, mutate the engine-owned config, save with getConfig(), reload it, and switch pages without a second config source.
         </p>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
@@ -206,7 +322,36 @@ export function NavigationLifecycleTab() {
         <button className="rounded border border-gray-300 bg-white px-2 py-1" onClick={() => history.forward()}>Forward</button>
         <span className={dirty ? 'text-amber-700' : 'text-gray-500'}>{dirty ? 'Unsaved config' : 'Clean config'}</span>
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
+        <button className="rounded bg-gray-900 px-2 py-1 text-white" onClick={() => void addPanel()}>Add panel</button>
+        <button
+          className="rounded border border-gray-300 px-2 py-1 disabled:opacity-40"
+          disabled={!selectedPanelId}
+          onClick={() => void removeSelectedPanel()}
+        >
+          Remove selected
+        </button>
+        <button
+          className="rounded border border-gray-300 px-2 py-1 disabled:opacity-40"
+          disabled={hasTeamVariable}
+          onClick={() => void addVariable()}
+        >
+          Add variable
+        </button>
+        <button
+          className="rounded border border-gray-300 px-2 py-1 disabled:opacity-40"
+          disabled={!hasTeamVariable}
+          onClick={() => void removeVariable()}
+        >
+          Remove variable
+        </button>
+        <button className="rounded border border-gray-300 px-2 py-1" onClick={() => void updateTitle()}>Update title</button>
+        <button className="ml-auto rounded border border-gray-300 bg-white px-2 py-1" onClick={saveDashboard}>Save getConfig()</button>
+        <button className="rounded border border-gray-300 bg-white px-2 py-1" onClick={reloadSaved}>Reload saved</button>
+        {builderStatus && <span className="text-gray-500">{builderStatus}</span>}
+      </div>
       <LifecycleVariables engine={engine} dashboardKey={dashboardKey} />
+      <ConfigSummary config={currentConfig} />
       <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
         {/* Render boundary — reads engine state only, no config prop */}
         <DashboardGrid engine={engine}>
@@ -221,19 +366,32 @@ export function NavigationLifecycleTab() {
         </DashboardGrid>
         <LifecycleEditor engine={engine} panelId={selectedPanelId} />
       </div>
+      {savedJson && (
+        <details className="mt-4 rounded border border-gray-200 bg-white">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">Last saved config</summary>
+          <pre className="max-h-80 overflow-auto border-t border-gray-200 p-3 text-[11px] text-gray-600">{savedJson}</pre>
+        </details>
+      )}
     </div>
   )
 }
 
 function LifecycleVariables({ engine, dashboardKey }: { engine: CoreEngineAPI; dashboardKey: DashboardKey }) {
-  if (dashboardKey === 'ops') return <VariableSelect engine={engine} name="region" label="Region" />
-  return <VariableSelect engine={engine} name="tenant" label="Tenant" />
+  const hasTeam = engine.getConfig()?.variables.some((variable) => variable.name === 'team') ?? false
+  return (
+    <div className="mb-4 flex flex-wrap gap-2">
+      {dashboardKey === 'ops'
+        ? <VariableSelect engine={engine} name="region" label="Region" />
+        : <VariableSelect engine={engine} name="tenant" label="Tenant" />}
+      {hasTeam && <VariableSelect engine={engine} name="team" label="Team" />}
+    </div>
+  )
 }
 
 function VariableSelect({ engine, name, label }: { engine: CoreEngineAPI; name: string; label: string }) {
   const variable = useVariable(engine, name)
   return (
-    <div className="mb-4 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
+    <div className="rounded border border-gray-200 bg-white px-3 py-2 text-xs">
       <label className="font-medium text-gray-600">
         {label}
         <select
@@ -244,6 +402,24 @@ function VariableSelect({ engine, name, label }: { engine: CoreEngineAPI; name: 
           {variable.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>
+    </div>
+  )
+}
+
+function ConfigSummary({ config }: { config: ReturnType<CoreEngineAPI['getConfig']> }) {
+  if (!config) return null
+  return (
+    <div className="mb-4 grid gap-2 text-xs md:grid-cols-2">
+      <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+        <span className="font-medium text-gray-600">Variables</span>
+        <span className="ml-2 text-gray-500">
+          {config.variables.length === 0 ? 'none' : config.variables.map((variable) => variable.name).join(', ')}
+        </span>
+      </div>
+      <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+        <span className="font-medium text-gray-600">Panels</span>
+        <span className="ml-2 text-gray-500">{config.panels.map((panel) => panel.id).join(', ')}</span>
+      </div>
     </div>
   )
 }
@@ -277,7 +453,7 @@ function renderPanel(props: PanelRenderProps) {
 }
 
 function LifecycleEditor({ engine, panelId }: { engine: CoreEngineAPI; panelId: string | null }) {
-  const { instance, draftPanel, setDraft, resetDraft, preview } = usePanelDraftEditor(engine, panelId)
+  const { instance, draftPanel, setDraft, resetDraft } = usePanelDraftEditor(engine, panelId)
   const [previewMeta, setPreviewMeta] = useState<string>('')
 
   // Uncontrolled refs — React never sets input.value, so Safari IME can commit freely
@@ -314,7 +490,7 @@ function LifecycleEditor({ engine, panelId }: { engine: CoreEngineAPI; panelId: 
   async function handlePreview() {
     const draft = readDraft()
     setDraft(draft)
-    const result = await preview()
+    const result = await engine.previewPanel(panelId!, { ...instance!.config, ...draft })
     setPreviewMeta(JSON.stringify(result.rawData[0]?.meta ?? {}, null, 2))
   }
 

@@ -7,6 +7,7 @@ import type {
   AuthorizationDecision,
   AuthorizationRequest,
   DashboardLoadOptions,
+  DashboardPatchInput,
   DashboardStateStore,
   DataRequestInput,
   PanelConfig,
@@ -17,6 +18,9 @@ import type {
   PanelRuntimeInstance,
   PanelReadiness,
   QueryResult,
+  VariableConfig,
+  VariableInput,
+  VariablePatchInput,
   VariableReadiness,
   VariableOption,
 } from './types'
@@ -97,6 +101,19 @@ export interface CoreEngineAPI {
 
   // Variables
   getVariable(name: string): import('./types').VariableState | undefined
+  addVariable(
+    variable: VariableInput,
+    options?: { refresh?: boolean },
+  ): Promise<void>
+  updateVariable(
+    name: string,
+    patch: VariablePatchInput | ((current: VariableConfig) => VariableInput),
+    options?: { refresh?: boolean },
+  ): Promise<void>
+  removeVariable(
+    name: string,
+    options?: { refresh?: boolean },
+  ): Promise<void>
   setVariable(name: string, value: string | string[]): void
   refreshVariables(): Promise<void>
   refreshVariable(name: string): Promise<boolean>
@@ -111,9 +128,17 @@ export interface CoreEngineAPI {
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
   toggleRow(panelId: string): Promise<void>
+  addPanel(
+    panel: PanelInput,
+    options?: { refresh?: boolean },
+  ): Promise<void>
   updatePanel(
     panelId: string,
     patch: PanelPatchInput | ((current: PanelConfig) => PanelInput),
+    options?: { refresh?: boolean; invalidateCache?: boolean },
+  ): Promise<void>
+  removePanel(
+    panelId: string,
     options?: { refresh?: boolean; invalidateCache?: boolean },
   ): Promise<void>
   previewPanel(
@@ -140,6 +165,12 @@ export interface CoreEngineAPI {
   getTimeRange(): { from: string; to: string } | undefined
   setRefresh(refresh: string): void
   getRefresh(): string | undefined
+
+  // Dashboard config
+  updateDashboard(
+    patch: DashboardPatchInput,
+    options?: { refresh?: boolean },
+  ): Promise<void>
 
   // Authorization context
   setAuthContext(context: AuthContext): void

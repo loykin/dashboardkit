@@ -5,9 +5,11 @@ import type {
   DashboardConfig,
   DashboardInput,
   DashboardLoadOptions,
+  DashboardPatchInput,
   DataRequestConfig,
   DataRequestInput,
   VariableConfig,
+  VariableInput,
   VariableState,
   PanelConfig,
   PanelInput,
@@ -337,6 +339,94 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       ...(Object.keys(variables).length > 0 ? { variables } : {}),
       ...(snapshot.timeRange === undefined && cfg.timeRange !== undefined ? { timeRange: cfg.timeRange } : {}),
       ...(snapshot.refresh === undefined ? { refresh: cfg.refresh } : {}),
+    }
+  }
+
+  function buildMissingVariableDefaultsPatch(cfg: DashboardConfig): import('../schema/types').DashboardStatePatch {
+    const snapshot = stateStore.getSnapshot()
+    const variables: Record<string, string | string[] | undefined> = {}
+    for (const v of cfg.variables) {
+      if (snapshot.variables[v.name] === undefined) {
+        variables[v.name] = defaultVariableValue(v)
+      }
+    }
+    return Object.keys(variables).length > 0 ? { variables } : {}
+  }
+
+  function panelValidationError(message: string): Error {
+    return Object.assign(new Error(message), { name: 'PanelValidationError' })
+  }
+
+  function panelNotFoundError(panelId: string): Error {
+    return Object.assign(
+      new Error(`Panel "${panelId}" is not an origin panel id or does not exist`),
+      { name: 'PanelNotFoundError' },
+    )
+  }
+
+  function variableValidationError(message: string): Error {
+    return Object.assign(new Error(message), { name: 'VariableValidationError' })
+  }
+
+  function variableNotFoundError(name: string): Error {
+    return Object.assign(
+      new Error(`Variable "${name}" does not exist`),
+      { name: 'VariableNotFoundError' },
+    )
+  }
+
+  function dashboardValidationError(message: string): Error {
+    return Object.assign(new Error(message), { name: 'DashboardValidationError' })
+  }
+
+  function assertOriginPanelId(cfg: DashboardConfig, panelId: string): PanelConfig {
+    const panel = cfg.panels.find((p) => p.id === panelId)
+    if (!panel) throw panelNotFoundError(panelId)
+    return panel
+  }
+
+  function commitPanelConfig(nextConfig: DashboardConfig): void {
+    store.setState((s) => ({
+      config: s.config ? nextConfig : null,
+    }))
+    syncPanelInstances()
+    emit({ type: 'config-changed', config: nextConfig })
+  }
+
+  async function reloadVariablesAfterConfigChange(
+    nextConfig: DashboardConfig,
+    options: { refresh: boolean },
+  ): Promise<void> {
+    suppressDashboardSnapshotEvents = true
+    let changed: string[] = []
+    try {
+      const defaultPatch = buildMissingVariableDefaultsPatch(nextConfig)
+      if (Object.keys(defaultPatch).length > 0) stateStore.setPatch(defaultPatch)
+
+      varEngine.load(nextConfig.variables)
+      store.setState({ variables: varEngine.getState() })
+      changed = await varEngine.refresh()
+      syncPanelInstances()
+    } finally {
+      suppressDashboardSnapshotEvents = false
+    }
+
+    for (const name of changed) {
+      const value = stateStore.getSnapshot().variables[name]
+      if (value !== undefined) emit({ type: 'variable-changed', name, value })
+    }
+
+    clearCache()
+    emit({ type: 'config-changed', config: nextConfig })
+    if (options.refresh) await refreshAllPanels()
+  }
+
+  function assertDashboardPatchAllowed(patch: DashboardPatchInput): void {
+    const raw = patch as Record<string, unknown>
+    for (const key of ['schemaVersion', 'id', 'panels', 'variables']) {
+      if (Object.prototype.hasOwnProperty.call(raw, key)) {
+        throw dashboardValidationError(`updateDashboard cannot change ${key}`)
+      }
     }
   }
 
@@ -689,6 +779,65 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     getConfig() { return store.getState().config },
     getVariable(name) { return store.getState().variables[name] },
 
+    async addVariable(variable: VariableInput, options = {}) {
+      const { refresh = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      if (cfg.variables.some((v) => v.name === variable.name)) {
+        throw variableValidationError(`Variable "${variable.name}" already exists`)
+      }
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        variables: [...cfg.variables, variable],
+      })
+
+      store.setState((s) => ({ config: s.config ? nextConfig : null }))
+      await reloadVariablesAfterConfigChange(nextConfig, { refresh })
+    },
+
+    async updateVariable(name, patch, options = {}) {
+      const { refresh = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      const current = cfg.variables.find((v) => v.name === name)
+      if (!current) throw variableNotFoundError(name)
+
+      const nextVariableInput: VariableInput = typeof patch === 'function'
+        ? patch(current)
+        : { ...current, ...patch }
+
+      if (nextVariableInput.name !== name) {
+        throw variableValidationError('updateVariable cannot rename variable')
+      }
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        variables: cfg.variables.map((v) => v.name === name ? nextVariableInput : v),
+      })
+
+      store.setState((s) => ({ config: s.config ? nextConfig : null }))
+      await reloadVariablesAfterConfigChange(nextConfig, { refresh })
+    },
+
+    async removeVariable(name, options = {}) {
+      const { refresh = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      if (!cfg.variables.some((v) => v.name === name)) throw variableNotFoundError(name)
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        variables: cfg.variables.filter((v) => v.name !== name),
+      })
+
+      store.setState((s) => ({ config: s.config ? nextConfig : null }))
+      await reloadVariablesAfterConfigChange(nextConfig, { refresh })
+    },
+
     setVariable(name, value) {
       if (!store.getState().variables[name]) return
       stateStore.setPatch({ variables: { [name]: value } })
@@ -784,27 +933,42 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       await Promise.all(newlyVisible.map((id) => executePanel(id)))
     },
 
+    async addPanel(panel, options = {}) {
+      const { refresh = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      if (cfg.panels.some((p) => p.id === panel.id)) {
+        throw panelValidationError(`Panel "${panel.id}" already exists`)
+      }
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        panels: [...cfg.panels, panel],
+      })
+
+      commitPanelConfig(nextConfig)
+
+      const affectedIds = store.getState().panelInstances
+        .filter((inst) => inst.originId === panel.id)
+        .map((inst) => inst.id)
+
+      if (refresh) await Promise.all(affectedIds.map((id) => executePanel(id)))
+    },
+
     // P3-1: update a single panel config without full dashboard reload
     async updatePanel(panelId, patch, options = {}) {
       const { refresh = true, invalidateCache = true } = options
       const cfg = store.getState().config
       if (!cfg) return
 
-      const isOriginPanel = cfg.panels.some((p) => p.id === panelId)
-      if (!isOriginPanel) {
-        throw Object.assign(
-          new Error(`Panel "${panelId}" is not an origin panel id or does not exist`),
-          { name: 'PanelNotFoundError' },
-        )
-      }
-
-      const currentPanel = cfg.panels.find((p) => p.id === panelId)!
+      const currentPanel = assertOriginPanelId(cfg, panelId)
       const nextPanelInput: PanelInput = typeof patch === 'function'
         ? patch(currentPanel)
         : { ...currentPanel, ...patch }
 
       if (nextPanelInput.id !== panelId) {
-        throw Object.assign(new Error('updatePanel cannot change panel id'), { name: 'PanelValidationError' })
+        throw panelValidationError('updatePanel cannot change panel id')
       }
 
       const nextConfig = DashboardConfigSchema.parse({
@@ -812,12 +976,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
         panels: cfg.panels.map((p) => p.id === panelId ? nextPanelInput : p),
       })
 
-      store.setState((s) => ({
-        config: s.config ? nextConfig : null,
-      }))
-
-      syncPanelInstances()
-      emit({ type: 'config-changed', config: nextConfig })
+      commitPanelConfig(nextConfig)
 
       const affectedIds = store.getState().panelInstances
         .filter((inst) => inst.originId === panelId)
@@ -830,6 +989,34 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       if (invalidateCache) invalidatePanelCache(affectedIds)
       if (refresh) await Promise.all(affectedIds.map((id) => executePanel(id)))
+    },
+
+    async removePanel(panelId, options = {}) {
+      const { refresh = false, invalidateCache = true } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      assertOriginPanelId(cfg, panelId)
+
+      const affectedIds = store.getState().panelInstances
+        .filter((inst) => inst.originId === panelId)
+        .map((inst) => inst.id)
+
+      for (const id of affectedIds) {
+        panelAbortControllers.get(id)?.abort()
+        panelAbortControllers.delete(id)
+        panelSelections.delete(id)
+      }
+      panelSelections.delete(panelId)
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        panels: cfg.panels.filter((p) => p.id !== panelId),
+      })
+
+      commitPanelConfig(nextConfig)
+      if (invalidateCache) invalidatePanelCache(affectedIds)
+      if (refresh) await refreshAllPanels()
     },
 
     // P3-2: run a temporary query without mutating panel state or cache
@@ -959,6 +1146,26 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     getTimeRange() { return stateStore.getSnapshot().timeRange },
     setRefresh(refresh) { stateStore.setPatch({ refresh }) },
     getRefresh() { return stateStore.getSnapshot().refresh },
+
+    async updateDashboard(patch, options = {}) {
+      const { refresh = false } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      assertDashboardPatchAllowed(patch)
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        ...patch,
+      })
+
+      commitPanelConfig(nextConfig)
+
+      if (refresh) {
+        clearCache()
+        await refreshAllPanels()
+      }
+    },
 
     setAuthContext(context) {
       store.setState({ authContext: context })

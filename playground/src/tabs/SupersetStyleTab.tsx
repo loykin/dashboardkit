@@ -202,7 +202,7 @@ export function SupersetStyleTab() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-base font-semibold">Superset-style exploration dashboard</h2>
+        <h2 className="text-base font-semibold">Explore cross-filter</h2>
         <p className="text-sm text-gray-500">Exploration workflow: chart cross-filters, panel editor, query preview, and viewer/editor state sync.</p>
       </div>
       <div className="mb-4 flex items-center gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">

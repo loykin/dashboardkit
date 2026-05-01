@@ -240,8 +240,8 @@ export function GrafanaStyleTab() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-base font-semibold">Grafana-style operations dashboard</h2>
-        <p className="text-sm text-gray-500">Operations workflow: variables/time range, editable grid, panel inspector, and config-changed dirty state.</p>
+        <h2 className="text-base font-semibold">Operations viewer</h2>
+        <p className="text-sm text-gray-500">Operational dashboard workflow: variables, time range, editable grid, row panels, panel inspector, and dirty state.</p>
       </div>
       <Toolbar engine={engine} />
       <div className="mb-4 flex items-center gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
