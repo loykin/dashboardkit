@@ -57,8 +57,13 @@ export interface PanelPluginDef<TOptions = Record<string, unknown>, TData = unkn
   optionsSchema: OptionSchema
   defaultOptions?: TOptions
   transform?: (results: QueryResult[], ctx?: PanelTransformContext) => TData
-  viewer?: PluginComponent<PanelViewerProps<TOptions, TData>>
-  editor?: PluginComponent<PanelEditorProps<TOptions>>
+  // Method shorthand makes viewer/editor bivariant in their Props parameter,
+  // which allows PanelPluginDef<Opts, SpecificData> to be assigned to
+  // PanelPluginDef<Opts, unknown> without 'as any' casts.
+  // The engine never calls viewer/editor itself — only the renderer does,
+  // with the correctly-typed data produced by transform().
+  viewer?(props: PanelViewerProps<TOptions, TData>): unknown
+  editor?(props: PanelEditorProps<TOptions>): unknown
   capabilities?: PanelPluginCapabilities
   // Cross-filter: declares which variable dimensions this panel can emit as selections
   selections?: PanelSelectionDef[]
