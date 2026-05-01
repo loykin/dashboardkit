@@ -49,7 +49,7 @@ function config(): DashboardInput {
         type: 'table',
         title: 'Sales',
         gridPos: { x: 0, y: 0, w: 12, h: 6 },
-        dataRequests: [{ id: 'main', uid: 'backend', type: 'backend', options: {}, hide: false, permissions: [] }],
+        dataRequests: [{ id: 'main', uid: 'backend', type: 'backend' }],
         options: {},
       },
     ],

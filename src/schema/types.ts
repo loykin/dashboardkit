@@ -195,18 +195,28 @@ export const DashboardConfigSchema = z.object({
 export type VariableConfig = z.infer<typeof VariableConfigSchema>
 export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
-export type DataRequestConfig = z.infer<typeof DataRequestSchema>
+export type DataRequestConfig = z.output<typeof DataRequestSchema>
+export type DataRequestInput = z.input<typeof DataRequestSchema>
 export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
-export type PanelConfig = z.infer<typeof PanelConfigSchema>
-// Input type (before parsing): fields with defaults are optional — use when constructing panel literals
-export type PanelInput = z.input<typeof PanelConfigSchema>
-export type PanelPatchInput = Partial<PanelInput>
+export type PanelConfig = z.output<typeof PanelConfigSchema>
+type PanelSchemaInput = z.input<typeof PanelConfigSchema>
+// Input type (before parsing): fields with defaults are optional — use when constructing panel literals.
+// Keep nested dataRequests explicitly input-shaped so editor-facing APIs do not require zod defaults.
+export type PanelInput = Omit<PanelSchemaInput, 'dataRequests'> & {
+  dataRequests?: DataRequestInput[]
+}
+export type PanelPatchInput = Omit<Partial<PanelInput>, 'dataRequests'> & {
+  dataRequests?: DataRequestInput[]
+}
 // Output type (after parsing): all defaults filled in — used internally by the engine
-export type DashboardConfig = z.infer<typeof DashboardConfigSchema>
-// Input type (before parsing): fields with defaults are optional — use this when writing a config literal
-export type DashboardInput = z.input<typeof DashboardConfigSchema>
+export type DashboardConfig = z.output<typeof DashboardConfigSchema>
+type DashboardSchemaInput = z.input<typeof DashboardConfigSchema>
+// Input type (before parsing): use this when writing a config literal.
+export type DashboardInput = Omit<DashboardSchemaInput, 'panels'> & {
+  panels: PanelInput[]
+}
 
 export interface DashboardStateSnapshot {
   variables: Record<string, string | string[]>

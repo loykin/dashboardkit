@@ -172,8 +172,8 @@ test('refreshing panel A does not evict panel B cache', async () => {
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
-      { id: 'p2', type: 'table', gridPos: { x: 6, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
+      { id: 'p2', type: 'table', gridPos: { x: 6, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
     ],
   })
 
@@ -373,8 +373,8 @@ test('updatePanel refreshes only the target panel', async () => {
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
-      { id: 'p2', type: 'table', gridPos: { x: 6, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
+      { id: 'p2', type: 'table', gridPos: { x: 6, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
     ],
   })
 
@@ -405,7 +405,7 @@ test('updatePanel with refresh=false updates config without querying', async () 
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
     ],
   })
 
@@ -436,7 +436,7 @@ test('updatePanel accepts panel input patch with data request defaults omitted',
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
     ],
   })
   await new Promise<void>((r) => setTimeout(r, 50))
@@ -476,7 +476,7 @@ test('updatePanel rejects patches that change the panel id', async () => {
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }] },
     ],
   })
   await new Promise<void>((r) => setTimeout(r, 20))
@@ -507,7 +507,7 @@ test('previewPanel uses temp config and does not mutate panel state', async () =
     schemaVersion: 1, id: 'd', title: 'D',
     variables: [],
     panels: [
-      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', query: 'SELECT original', options: {}, hide: false, permissions: [] }] },
+      { id: 'p1', type: 'table', gridPos: { x: 0, y: 0, w: 6, h: 4 }, dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', query: 'SELECT original' }] },
     ],
   })
 
@@ -518,7 +518,7 @@ test('previewPanel uses temp config and does not mutate panel state', async () =
     id: 'p1',
     type: 'table',
     gridPos: { x: 0, y: 0, w: 6, h: 4 },
-    dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', query: 'SELECT preview', options: {}, hide: false, permissions: [] }],
+    dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', query: 'SELECT preview' }],
   })
 
   assert.equal(previewQuery, 'SELECT preview', 'preview should use temp query')
@@ -554,7 +554,7 @@ test('previewPanel can be aborted via caller signal', async () => {
       id: 'tmp',
       type: 'table',
       gridPos: { x: 0, y: 0, w: 6, h: 4 },
-      dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }],
+      dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }],
     },
     { signal: ac.signal },
   )
@@ -580,7 +580,7 @@ test('previewPanel rejects immediately when caller signal is already aborted', a
         id: 'p1',
         type: 'table',
         gridPos: { x: 0, y: 0, w: 6, h: 4 },
-        dataRequests: [{ id: 'main', uid: 'ds', type: 'mock', options: {}, hide: false, permissions: [] }],
+        dataRequests: [{ id: 'main', uid: 'ds', type: 'mock' }],
       },
       { signal: ac.signal },
     ),
