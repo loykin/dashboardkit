@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  createCrossFilterAddon,
   createDashboardEngine,
+  createEditorAddon,
   defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
@@ -113,9 +115,10 @@ const dashboard: DashboardInput = {
 }
 
 function SelectionState({ engine }: { engine: CoreEngineAPI }) {
-  const [state, setState] = useState(engine.getPanelSelections())
+  const cf = createCrossFilterAddon(engine)
+  const [state, setState] = useState(cf.getPanelSelections())
   useEngineEvent(engine, (event) => {
-    if (event.type === 'panel-selection-changed') setState(engine.getPanelSelections())
+    if (event.type === 'panel-selection-changed') setState(cf.getPanelSelections())
   })
   const entries = Object.entries(state)
 
@@ -127,7 +130,7 @@ function SelectionState({ engine }: { engine: CoreEngineAPI }) {
           {panelId}: {JSON.stringify(filters)}
         </span>
       ))}
-      <button className="ml-auto rounded border border-gray-300 bg-white px-2 py-1" onClick={() => engine.clearAllPanelSelections()}>
+      <button className="ml-auto rounded border border-gray-300 bg-white px-2 py-1" onClick={() => cf.clearAllPanelSelections()}>
         Clear all
       </button>
     </div>
@@ -150,7 +153,7 @@ function BarPanel({ engine, props }: { engine: CoreEngineAPI; props: PanelRender
             <button
               key={label}
               className="grid w-full grid-cols-[72px_1fr_40px] items-center gap-2 text-left text-xs"
-              onClick={() => engine.setPanelSelection(props.panelId, { [dimension]: label })}
+              onClick={() => createCrossFilterAddon(engine).setPanelSelection(props.panelId, { [dimension]: label })}
             >
               <span className="font-medium text-gray-600">{label}</span>
               <span className="h-5 rounded bg-blue-100">
@@ -279,7 +282,7 @@ function SupersetPanelEditor({
   }
 
   async function runPreview() {
-    const result = await engine.previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
+    const result = await createEditorAddon(engine).previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
     setPreviewRows(result.rawData.reduce((count, data) => count + data.rows.length, 0))
   }
 

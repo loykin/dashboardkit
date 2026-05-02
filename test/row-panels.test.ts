@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   createDashboardEngine,
+  createLayoutAddon,
   defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
@@ -103,7 +104,7 @@ test('expanding a row triggers queries for newly visible child panels', async ()
   await wait(50)
 
   assert.equal(queryCalls, 0)
-  await engine.toggleRow('row-a')
+  await createLayoutAddon(engine).toggleRow('row-a')
 
   assert.equal(engine.getPanelInstance('child-a')?.id, 'child-a')
   assert.equal(queryCalls, 1)
@@ -159,7 +160,7 @@ test('collapsing a row aborts in-flight requests for child panels', async () => 
   await wait(50)
 
   assert.equal(started, true)
-  await engine.toggleRow('row-a')
+  await createLayoutAddon(engine).toggleRow('row-a')
 
   assert.equal(aborted, true)
   assert.equal(engine.getPanelInstance('child-a'), undefined)

@@ -24,9 +24,10 @@ import type {
   PanelRuntimeInstance,
   PanelExpander,
 } from '../schema'
-import { DashboardConfigSchema, DataRequestSchema, PanelConfigSchema } from '../schema'
+import { DashboardConfigSchema, DataRequestSchema, VariableConfigSchema } from '../schema'
 import { parseTimeRange } from '../query'
 import { applyTransforms } from '../transforms'
+import type { TransformPluginDef } from '../transforms'
 import { validateOptionSchema } from '../schema'
 import { createMemoryDashboardStateStore } from './state'
 import type {
@@ -63,12 +64,28 @@ interface PanelCacheEntry {
 
 // ─── Engine Implementation ──────────────────────────────────────────────────────
 
-export function createDashboardEngine(options: CreateDashboardEngineOptions): CoreEngineAPI {
+// Encodes/decodes a time range for datetime variable values ("now-1h|now")
+const DATETIME_SEP = '|'
+
+function encodeDatetime(range: { from: string; to: string }): string {
+  return `${range.from}${DATETIME_SEP}${range.to}`
+}
+
+function decodeDatetime(val: string | string[] | undefined): { from: string; to: string } | undefined {
+  const str = Array.isArray(val) ? val[0] : val
+  if (!str) return undefined
+  const sepIdx = str.indexOf(DATETIME_SEP)
+  if (sepIdx === -1) return undefined
+  const from = str.slice(0, sepIdx)
+  const to = str.slice(sepIdx + 1)
+  return from && to ? { from, to } : undefined
+}
+
+export function createDashboardEngine(options: CreateDashboardEngineOptions = {}): CoreEngineAPI {
   const {
-    panels: panelDefs,
-    datasourcePlugins: dsDefs,
-    variableTypes: vtDefs,
-    builtinVariables = [],
+    panels: panelDefs = [],
+    datasourcePlugins: dsDefs = [],
+    variableTypes: vtDefs = [],
     panelExpanders: customPanelExpanders = [],
     stateStore = createMemoryDashboardStateStore(),
     authContext = {},
@@ -77,6 +94,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
   const datasourceRegistry = createDatasourceRegistry(dsDefs)
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
+  const transformRegistry = new Map<string, TransformPluginDef>()
 
   // P0-3: metadata-based cache + secondary index by panelId
   const cache = new Map<string, PanelCacheEntry>()
@@ -120,7 +138,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
   const varEngine = createVariableEngine({
     variableTypes: vtDefs,
     datasourcePlugins: dsDefs,
-    builtinVariables,
     stateStore,
     getAuthContext: () => store.getState().authContext,
     getDashboardConfig: () => store.getState().config,
@@ -490,8 +507,24 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     }
   }
 
+  function findDatetimeVarName(): string | undefined {
+    return store.getState().config?.variables.find((v) => v.type === 'datetime')?.name
+  }
+
+  function findRefreshVarName(): string | undefined {
+    return store.getState().config?.variables.find((v) => v.type === 'refresh')?.name
+  }
+
+  function getEffectiveTimeRange(): { from: string; to: string } | undefined {
+    const datetimeVarName = findDatetimeVarName()
+    if (datetimeVarName) {
+      return decodeDatetime(stateStore.getSnapshot().variables[datetimeVarName])
+    }
+    return stateStore.getSnapshot().timeRange
+  }
+
   function buildPanelQueryContext(instance: PanelRuntimeInstance) {
-    const tr = stateStore.getSnapshot().timeRange
+    const tr = getEffectiveTimeRange()
     // cross-filter sits between global vars and repeat-instance overrides
     const effectiveVariables = { ...buildCtxVariables(), ...buildCrossFilterVariables(), ...(instance.variablesOverride ?? {}) }
     return { tr, variables: effectiveVariables }
@@ -622,7 +655,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
           if (latestResults.some((r) => r === null)) return
           const results = latestResults as QueryResult[]
           const panelDef = panelMap.get(instance.config.type)
-          const pipelined = panelDef?.transforms?.length ? applyTransforms(results, panelDef.transforms) : results
+          const pipelined = panelDef?.transforms?.length ? applyTransforms(results, panelDef.transforms, transformRegistry) : results
           const data = panelDef?.transform ? panelDef.transform(pipelined) : pipelined
           store.setState((s) => ({
             panels: { ...s.panels, [panelId]: { ...s.panels[panelId]!, data, rawData: results, loading: false, error: null } },
@@ -684,7 +717,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       if (cached) {
         assertCurrentPanelRequest(panelId, controller)
         const panelDef = panelMap.get(pcfg.type)
-        const pipelined = panelDef?.transforms?.length ? applyTransforms(cached, panelDef.transforms) : cached
+        const pipelined = panelDef?.transforms?.length ? applyTransforms(cached, panelDef.transforms, transformRegistry) : cached
         applyPanelData(panelId, panelDef?.transform ? panelDef.transform(pipelined) : pipelined, cached)
         // stale-while-revalidate: trigger background refresh when cache was served stale
         const isStale = activeRequests.some((r) => {
@@ -711,7 +744,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
       assertCurrentPanelRequest(panelId, controller)
       const panelDef = panelMap.get(pcfg.type)
-      const pipelined = panelDef?.transforms?.length ? applyTransforms(results, panelDef.transforms) : results
+      const pipelined = panelDef?.transforms?.length ? applyTransforms(results, panelDef.transforms, transformRegistry) : results
       applyPanelData(panelId, panelDef?.transform ? panelDef.transform(pipelined) : pipelined, results)
     } catch (e) {
       if (!isCurrentPanelRequest(panelId, controller) || isAbortError(e)) return
@@ -793,20 +826,32 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     if (!cfg) return
 
     const changedVars = changedVariableNames(prev, snapshot)
+    const datetimeVarName = findDatetimeVarName()
+    const refreshVarName = findRefreshVarName()
+    const datetimeVarChanged = datetimeVarName != null && changedVars.includes(datetimeVarName)
     const timeChanged =
+      datetimeVarChanged ||
       prev.timeRange?.from !== snapshot.timeRange?.from ||
       prev.timeRange?.to !== snapshot.timeRange?.to
-    const refreshChanged = prev.refresh !== snapshot.refresh
+    const refreshChanged =
+      (refreshVarName != null && changedVars.includes(refreshVarName)) ||
+      prev.refresh !== snapshot.refresh
 
     for (const name of changedVars) {
       const value = snapshot.variables[name]
       if (value !== undefined) emit({ type: 'variable-changed', name, value })
     }
-    if (refreshChanged && snapshot.refresh !== undefined) {
-      emit({ type: 'refresh-changed', refresh: snapshot.refresh })
+    if (refreshChanged) {
+      const effectiveRefresh = refreshVarName
+        ? (() => { const v = snapshot.variables[refreshVarName]; return Array.isArray(v) ? v[0] : v })()
+        : snapshot.refresh
+      if (effectiveRefresh !== undefined) emit({ type: 'refresh-changed', refresh: effectiveRefresh })
     }
-    if (timeChanged && snapshot.timeRange) {
-      emit({ type: 'time-range-changed', range: snapshot.timeRange })
+    if (timeChanged) {
+      const effectiveRange = datetimeVarName
+        ? decodeDatetime(snapshot.variables[datetimeVarName])
+        : snapshot.timeRange
+      if (effectiveRange) emit({ type: 'time-range-changed', range: effectiveRange })
       clearCache()
     }
 
@@ -906,6 +951,14 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     getConfig() { return store.getState().config },
     getVariable(name) { return store.getState().variables[name] },
+
+    async registerVariable(def: VariableInput, options = {}) {
+      const { refresh = false } = options
+      const parsed = VariableConfigSchema.parse(def)
+      varEngine.registerEngineVariable(parsed)
+      const cfg = store.getState().config
+      if (cfg) await reloadVariablesAfterConfigChange(cfg, { refresh })
+    },
 
     async addVariable(variable: VariableInput, options = {}) {
       const { refresh = true } = options
@@ -1032,35 +1085,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
 
     async refreshAll() { await refreshAllPanels() },
 
-    async toggleRow(panelId) {
-      const cfg = store.getState().config
-      if (!cfg) return
-
-      const row = cfg.panels.find((p) => p.id === panelId)
-      if (!row?.isRow) {
-        throw Object.assign(
-          new Error(`Panel "${panelId}" is not a row panel or does not exist`),
-          { name: 'PanelNotFoundError' },
-        )
-      }
-
-      const beforeIds = new Set(store.getState().panelInstances.map((instance) => instance.id))
-      await api.updatePanel(
-        panelId,
-        { collapsed: !row.collapsed },
-        { refresh: false, invalidateCache: false },
-      )
-
-      const nextRow = store.getState().config?.panels.find((p) => p.id === panelId)
-      if (!nextRow || nextRow.collapsed) return
-
-      const newlyVisible = store.getState().panelInstances
-        .map((instance) => instance.id)
-        .filter((id) => !beforeIds.has(id))
-
-      await Promise.all(newlyVisible.map((id) => executePanel(id)))
-    },
-
     async addPanel(panel, options = {}) {
       const { refresh = true } = options
       const cfg = store.getState().config
@@ -1151,67 +1175,90 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       if (refresh) await refreshAllPanels()
     },
 
-    // P3-2: run a temporary query without mutating panel state or cache
-    async previewPanel(panelId: string, tempPanel: PanelInput, options = {}) {
-      const { variablesOverride = {}, signal: callerSignal } = options
-      const cfg = store.getState().config
-      if (!cfg) throw new Error('no dashboard loaded')
-
-      const parsedTempPanel = PanelConfigSchema.parse(tempPanel)
-      const activeRequests = parsedTempPanel.dataRequests.filter((r) => !r.hide)
-      if (activeRequests.length === 0) return { data: null as unknown, rawData: [] }
-
-      const effectiveVariables = { ...buildCtxVariables(), ...variablesOverride }
-      const tr = stateStore.getSnapshot().timeRange
-
-      const controller = new AbortController()
-      if (callerSignal) {
-        if (callerSignal.aborted) throw abortError()
-        callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+    validatePanelOptions(type, options, validationOptions) {
+      const panelDef = panelMap.get(type)
+      if (!panelDef) {
+        return {
+          valid: false,
+          errors: [{ path: ['type'], message: `panel type "${type}" is not registered` }],
+        }
       }
-
-      const previewInstance: PanelRuntimeInstance = findPanelInstance(panelId) ?? {
-        id: panelId,
-        originId: panelId,
-        config: parsedTempPanel,
-        type: parsedTempPanel.type,
-        title: parsedTempPanel.title,
-        gridPos: parsedTempPanel.gridPos,
-      }
-
-      const rawData = await Promise.all(
-        activeRequests.map(async (request) => {
-          const dsDef = datasourceRegistry.getForRequest(request)
-          await ensurePanelDataRequestAuthorized(cfg, parsedTempPanel, request, request.uid)
-          if (controller.signal.aborted) throw abortError()
-          const result = await dsDef.query({
-            dataRequest: request,
-            dashboardId: cfg.id,
-            panelId,
-            requestId: request.id,
-            ...(request.query !== undefined ? { query: request.query } : {}),
-            requestOptions: request.options,
-            variables: effectiveVariables,
-            datasourceOptions: dsDef.options ?? ({} as never),
-            authContext: store.getState().authContext,
-            ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
-            signal: controller.signal,
-            builtins: varEngine.getBuiltins(),
-            panel: parsedTempPanel,
-            panelOptions: parsedTempPanel.options,
-            panelInstance: previewInstance,
-          })
-          return { ...result, requestId: request.id }
-        }),
-      )
-
-      const panelDef = panelMap.get(parsedTempPanel.type)
-      const pipelined = panelDef?.transforms?.length ? applyTransforms(rawData, panelDef.transforms) : rawData
-      const data = panelDef?.transform ? panelDef.transform(pipelined) : pipelined
-      return { data, rawData }
+      return validateOptionSchema(panelDef.optionsSchema, options, [], validationOptions)
     },
 
-    async previewDataRequest(request: DataRequestInput, options = {}) {
+    validateDataRequest(request) {
+      const parsed = DataRequestSchema.safeParse(request)
+      if (parsed.success) return { valid: true, errors: [] }
+
+      return {
+        valid: false,
+        errors: parsed.error.issues.map((issue) => ({
+          path: issue.path.map(String),
+          message: issue.message,
+        })),
+      }
+    },
+
+    getTimeRange() {
+      return getEffectiveTimeRange()
+    },
+    getRefresh() {
+      const refreshVarName = findRefreshVarName()
+      if (refreshVarName) {
+        const val = stateStore.getSnapshot().variables[refreshVarName]
+        return Array.isArray(val) ? val[0] : val
+      }
+      return stateStore.getSnapshot().refresh
+    },
+
+    async updateDashboard(patch, options = {}) {
+      const { refresh = false } = options
+      const cfg = store.getState().config
+      if (!cfg) return
+
+      assertDashboardPatchAllowed(patch)
+
+      const nextConfig = DashboardConfigSchema.parse({
+        ...cfg,
+        ...patch,
+      })
+
+      commitPanelConfig(nextConfig)
+
+      if (refresh) {
+        clearCache()
+        await refreshAllPanels()
+      }
+    },
+
+    setAuthContext(context) {
+      store.setState({ authContext: context })
+      clearCache()
+      void api.refreshVariables()
+    },
+
+    getAuthContext() { return store.getState().authContext },
+
+    // ─── Kernel primitives ──────────────────────────────────────────────────────
+
+    setPanelQueryScope(panelId, scope) {
+      if (scope === null) {
+        if (!panelSelections.has(panelId)) return
+        panelSelections.delete(panelId)
+        emit({ type: 'panel-selection-changed', panelId, selection: null })
+      } else {
+        panelSelections.set(panelId, scope)
+        emit({ type: 'panel-selection-changed', panelId, selection: scope })
+      }
+    },
+
+    getPanelQueryScopes() {
+      const result: Record<string, Record<string, string | string[]>> = {}
+      for (const [panelId, filters] of panelSelections) result[panelId] = { ...filters }
+      return result
+    },
+
+    async executeDataRequest(request: DataRequestInput, options = {}) {
       const { panelId, variablesOverride = {}, signal: callerSignal } = options
       const cfg = store.getState().config
       if (!cfg) throw new Error('no dashboard loaded')
@@ -1220,7 +1267,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       const panelInstance = panelId ? findPanelInstance(panelId) : undefined
       const panelConfig = panelInstance?.config
       const effectiveVariables = { ...buildCtxVariables(), ...variablesOverride }
-      const tr = stateStore.getSnapshot().timeRange
+      const tr = getEffectiveTimeRange()
 
       const controller = new AbortController()
       if (callerSignal) {
@@ -1251,101 +1298,29 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
       return { ...result, requestId: parsedRequest.id }
     },
 
-    validatePanelOptions(type, options, validationOptions) {
+    applyPanelTransforms(type, results) {
       const panelDef = panelMap.get(type)
-      if (!panelDef) {
-        return {
-          valid: false,
-          errors: [{ path: ['type'], message: `panel type "${type}" is not registered` }],
-        }
-      }
-      return validateOptionSchema(panelDef.optionsSchema, options, [], validationOptions)
+      if (!panelDef?.transforms?.length) return results
+      return applyTransforms(results, panelDef.transforms, transformRegistry)
     },
 
-    validateDataRequest(request) {
-      const parsed = DataRequestSchema.safeParse(request)
-      if (parsed.success) return { valid: true, errors: [] }
-
-      return {
-        valid: false,
-        errors: parsed.error.issues.map((issue) => ({
-          path: issue.path.map(String),
-          message: issue.message,
-        })),
-      }
+    getPanelPlugin(type) {
+      return panelMap.get(type)
     },
 
-    setTimeRange(range) { stateStore.setPatch({ timeRange: range }) },
-    getTimeRange() { return stateStore.getSnapshot().timeRange },
-    setRefresh(refresh) { stateStore.setPatch({ refresh }) },
-    getRefresh() { return stateStore.getSnapshot().refresh },
-
-    async updateDashboard(patch, options = {}) {
-      const { refresh = false } = options
-      const cfg = store.getState().config
-      if (!cfg) return
-
-      assertDashboardPatchAllowed(patch)
-
-      const nextConfig = DashboardConfigSchema.parse({
-        ...cfg,
-        ...patch,
-      })
-
-      commitPanelConfig(nextConfig)
-
-      if (refresh) {
+    invalidateCache(panelIds?) {
+      if (panelIds) {
+        invalidatePanelCache(panelIds)
+      } else {
         clearCache()
-        await refreshAllPanels()
       }
     },
 
-    setAuthContext(context) {
-      store.setState({ authContext: context })
-      clearCache()
-      void api.refreshVariables()
-    },
-
-    getAuthContext() { return store.getState().authContext },
-
-    // ─── Cross-filter ───────────────────────────────────────────────────────────
-    setPanelSelection(panelId, filters) {
-      panelSelections.set(panelId, filters)
-      emit({ type: 'panel-selection-changed', panelId, selection: filters })
-      clearCache()
-      void api.refreshAll()
-    },
-
-    clearPanelSelection(panelId) {
-      if (!panelSelections.has(panelId)) return
-      panelSelections.delete(panelId)
-      emit({ type: 'panel-selection-changed', panelId, selection: null })
-      clearCache()
-      void api.refreshAll()
-    },
-
-    clearAllPanelSelections() {
-      if (panelSelections.size === 0) return
-      const ids = [...panelSelections.keys()]
-      panelSelections.clear()
-      for (const panelId of ids) {
-        emit({ type: 'panel-selection-changed', panelId, selection: null })
-      }
-      clearCache()
-      void api.refreshAll()
-    },
-
-    getPanelSelections() {
-      const result: Record<string, Record<string, string | string[]>> = {}
-      for (const [panelId, filters] of panelSelections) result[panelId] = { ...filters }
-      return result
-    },
-
-    async getAnnotations(timeRange?: { from: string; to: string }): Promise<Annotation[]> {
+    async queryAnnotations(timeRange?: { from: string; to: string }): Promise<Annotation[]> {
       const cfg = store.getState().config
       if (!cfg || cfg.annotations.length === 0) return []
 
-      const tr = timeRange ?? stateStore.getSnapshot().timeRange
+      const tr = timeRange ?? getEffectiveTimeRange()
       const resolvedTr = tr ? resolveTimeRange(tr) : undefined
       const authCtx = store.getState().authContext
 
@@ -1399,6 +1374,23 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions): Co
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+
+    // ─── Runtime Registration ───────────────────────────────────────────────────
+    registerPanel(def) {
+      panelMap.set(def.id, def)
+    },
+
+    registerDatasource(def) {
+      datasourceRegistry.register(def)
+    },
+
+    registerVariableType(def) {
+      varEngine.registerType(def)
+    },
+
+    registerTransform(def) {
+      transformRegistry.set(def.type, def)
     },
   }
 

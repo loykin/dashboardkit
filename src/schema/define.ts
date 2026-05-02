@@ -1,4 +1,3 @@
-import type { BuiltinContext, BuiltinVariable } from '../variables'
 import type { OptionSchema, ValidateOptionSchemaOptions, ValidationResult } from './options'
 import type { DatasourcePluginDef } from '../plugins'
 import type { PanelPluginDef } from '../plugins'
@@ -29,6 +28,7 @@ import type {
 export type { DatasourcePluginDef } from '../plugins/datasource'
 export type { PanelPluginDef, PanelProps } from '../plugins/panel'
 export type { ValidateOptionSchemaOptions, ValidationResult, ValidationError } from './options'
+export type { TransformPluginDef } from '../transforms'
 
 // ─── Datasource Plugin ───────────────────────────────────────────────────────────────
 // uid: 1:1 mapping with dataRequest.uid in the dashboard JSON
@@ -81,10 +81,9 @@ export function defineVariableType<TOptions = Record<string, unknown>>(
 // ─── Engine Creation Options ────────────────────────────────────────────────────
 
 export interface CreateDashboardEngineOptions {
-  panels: PanelPluginDef[]
-  datasourcePlugins: DatasourcePluginDef[]
-  variableTypes: VariableTypePluginDef[]
-  builtinVariables?: BuiltinVariable[]
+  panels?: PanelPluginDef[]
+  datasourcePlugins?: DatasourcePluginDef[]
+  variableTypes?: VariableTypePluginDef[]
   panelExpanders?: PanelExpander[]
   stateStore?: DashboardStateStore
   authContext?: AuthContext
@@ -102,6 +101,7 @@ export interface CoreEngineAPI {
 
   // Variables
   getVariable(name: string): import('./types').VariableState | undefined
+  registerVariable(def: VariableInput, options?: { refresh?: boolean }): Promise<void>
   addVariable(
     variable: VariableInput,
     options?: { refresh?: boolean },
@@ -128,7 +128,6 @@ export interface CoreEngineAPI {
   getPanelReadiness(panelId: string): PanelReadiness | null
   refreshPanel(panelId: string): Promise<void>
   refreshAll(): Promise<void>
-  toggleRow(panelId: string): Promise<void>
   addPanel(
     panel: PanelInput,
     options?: { refresh?: boolean },
@@ -142,29 +141,11 @@ export interface CoreEngineAPI {
     panelId: string,
     options?: { refresh?: boolean; invalidateCache?: boolean },
   ): Promise<void>
-  previewPanel(
-    panelId: string,
-    tempPanel: PanelInput,
-    options?: {
-      variablesOverride?: Record<string, string | string[]>
-      signal?: AbortSignal
-    },
-  ): Promise<{ data: unknown; rawData: QueryResult[] }>
-  previewDataRequest(
-    request: DataRequestInput,
-    options?: {
-      panelId?: string
-      variablesOverride?: Record<string, string | string[]>
-      signal?: AbortSignal
-    },
-  ): Promise<QueryResult>
   validatePanelOptions(type: string, options: unknown, validationOptions?: ValidateOptionSchemaOptions): ValidationResult
   validateDataRequest(request: DataRequestInput): ValidationResult
 
-  // Time range
-  setTimeRange(range: { from: string; to: string }): void
+  // Time range — read-only convenience; write via setVariable with a datetime/refresh variable
   getTimeRange(): { from: string; to: string } | undefined
-  setRefresh(refresh: string): void
   getRefresh(): string | undefined
 
   // Dashboard config
@@ -177,17 +158,30 @@ export interface CoreEngineAPI {
   setAuthContext(context: AuthContext): void
   getAuthContext(): AuthContext
 
-  // Cross-filter — panel-scoped variable overrides, engine memory only (not persisted to state store)
-  setPanelSelection(panelId: string, filters: Record<string, string | string[]>): void
-  clearPanelSelection(panelId: string): void
-  clearAllPanelSelections(): void
-  getPanelSelections(): Record<string, Record<string, string | string[]>>
-
-  // Annotations — fetch time-range event overlays from all non-hidden annotation queries
-  getAnnotations(timeRange?: { from: string; to: string }): Promise<Annotation[]>
+  // Kernel primitives — building blocks for addon authoring
+  setPanelQueryScope(panelId: string, scope: Record<string, string | string[]> | null): void
+  getPanelQueryScopes(): Record<string, Record<string, string | string[]>>
+  executeDataRequest(
+    request: DataRequestInput,
+    options?: {
+      panelId?: string
+      variablesOverride?: Record<string, string | string[]>
+      signal?: AbortSignal
+    },
+  ): Promise<QueryResult>
+  applyPanelTransforms(type: string, results: QueryResult[]): QueryResult[]
+  getPanelPlugin(type: string): PanelPluginDef | undefined
+  invalidateCache(panelIds?: string[]): void
+  queryAnnotations(timeRange?: { from: string; to: string }): Promise<Annotation[]>
 
   // Subscribe (returns unsubscribe function)
   subscribe(listener: (event: import('./types').EngineEvent) => void): () => void
+
+  // Runtime registration — add plugins after engine creation
+  registerPanel(def: PanelPluginDef): void
+  registerDatasource(def: DatasourcePluginDef): void
+  registerVariableType(def: VariableTypePluginDef): void
+  registerTransform(def: import('../transforms').TransformPluginDef): void
 }
 
 // createDashboardEngine is implemented and exported from engine.ts.
@@ -195,8 +189,8 @@ export interface CoreEngineAPI {
 
 // ─── Addon Pattern ──────────────────────────────────────────────────────────────
 // An addon receives a CoreEngineAPI and adds functionality via side effects.
-// Example: addon-time-range → wraps engine.setTimeRange() + parses relative time
-// Example: addon-refresh   → polling timer + engine.refreshAll() call
+// Example: addon-cross-filter → uses setPanelQueryScope + invalidateCache + refreshAll
+// Example: addon-auto-refresh → wraps engine.getRefresh() + engine.refreshAll()
 
 export interface AddonFactory<TAddonAPI = void> {
   (engine: CoreEngineAPI): TAddonAPI
@@ -206,6 +200,6 @@ export function createBuiltinContext(
   timeRange: { from: string; to: string },
   dashboardId: string,
   dashboardTitle: string,
-): BuiltinContext {
+): import('../variables').BuiltinContext {
   return { timeRange, dashboard: { id: dashboardId, title: dashboardTitle } }
 }

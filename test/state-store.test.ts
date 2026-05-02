@@ -75,8 +75,7 @@ test('engine setters write to the canonical dashboard state store', () => {
 
   engine.load(config())
   engine.setVariable('country', 'US')
-  engine.setTimeRange({ from: 'now-1h', to: 'now' })
-  engine.setRefresh('30s')
+  stateStore.setPatch({ timeRange: { from: 'now-1h', to: 'now' }, refresh: '30s' })
 
   assert.deepEqual(stateStore.getSnapshot(), {
     variables: { country: 'US' },

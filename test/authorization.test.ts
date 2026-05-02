@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   createDashboardEngine,
+  createEditorAddon,
   defineDatasource,
   definePanel,
   defineVariableType,
@@ -159,7 +160,7 @@ test('denied previewPanel datasource query does not call the datasource plugin',
   engine.load(dashboardConfig())
 
   await assert.rejects(
-    () => engine.previewPanel('sales-table', {
+    () => createEditorAddon(engine).previewPanel('sales-table', {
       id: 'sales-table',
       type: 'table',
       title: 'Sales Preview',

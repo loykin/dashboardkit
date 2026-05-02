@@ -6,11 +6,15 @@ export {
   textboxVariableType,
   intervalVariableType,
   queryVariableType,
+  datetimeVariableType,
+  refreshVariableType,
   builtinVariableTypes,
   constantVariableType as constantVariable,
   customVariableType as customVariable,
   textboxVariableType as textboxVariable,
   intervalVariableType as intervalVariable,
   queryVariableType as queryVariable,
+  datetimeVariableType as datetimeVariable,
+  refreshVariableType as refreshVariable,
 } from './variables/variable-types'
 export type { VariableTypePluginDef } from './schema/define'

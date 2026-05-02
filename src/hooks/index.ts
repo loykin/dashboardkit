@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { createEditorAddon } from '../addons/editor'
 import type { CoreEngineAPI } from '../schema'
 import type {
   Annotation,
@@ -55,8 +56,6 @@ export interface UseDashboardResult {
   timeRange: { from: string; to: string } | undefined
   refresh: string | undefined
   setVariable: (name: string, value: string | string[]) => void
-  setTimeRange: (range: { from: string; to: string }) => void
-  setRefresh: (refresh: string) => void
   refreshAll: () => Promise<void>
 }
 
@@ -75,21 +74,13 @@ export function useDashboard(engine: CoreEngineAPI): UseDashboardResult {
     [engine],
   )
 
-  const setTimeRange = useCallback(
-    (range: { from: string; to: string }) => engine.setTimeRange(range),
-    [engine],
-  )
-
   const refreshAll = useCallback(() => engine.refreshAll(), [engine])
-  const setRefresh = useCallback((refresh: string) => engine.setRefresh(refresh), [engine])
 
   return {
     variables: state.variables,
     timeRange: state.timeRange,
     refresh: state.refresh,
     setVariable,
-    setTimeRange,
-    setRefresh,
     refreshAll,
   }
 }
@@ -334,7 +325,7 @@ export function usePanelDraftEditor(
     if (!panelId) return Promise.resolve({ data: null as unknown, rawData: [] })
     const panel = draftPanel ?? instance?.config
     if (!panel) return Promise.resolve({ data: null as unknown, rawData: [] })
-    return engine.previewPanel(panelId, panel)
+    return createEditorAddon(engine).previewPanel(panelId, panel)
   }, [engine, panelId, draftPanel, instance])
 
   return { instance, draftPanel, setDraft, resetDraft, apply, preview }
@@ -457,7 +448,7 @@ export function useAnnotations(
   const fetch = useCallback(() => {
     setLoading(true)
     setError(null)
-    engine.getAnnotations(timeRangeRef.current).then(
+    engine.queryAnnotations(timeRangeRef.current).then(
       (result) => { setAnnotations(result); setLoading(false) },
       (err: unknown) => { setError(err instanceof Error ? err.message : String(err)); setLoading(false) },
     )

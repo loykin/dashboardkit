@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   createDashboardEngine,
+  createEditorAddon,
+  createMemoryDashboardStateStore,
   defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, DashboardStateStore, QueryOptions, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 interface SeriesRow {
@@ -139,7 +141,7 @@ const dashboard: DashboardInput = {
   ],
 }
 
-function Toolbar({ engine }: { engine: CoreEngineAPI }) {
+function Toolbar({ engine, stateStore }: { engine: CoreEngineAPI; stateStore: DashboardStateStore }) {
   const env = useVariable(engine, 'env')
   const host = useVariable(engine, 'host')
 
@@ -167,13 +169,13 @@ function Toolbar({ engine }: { engine: CoreEngineAPI }) {
       </label>
       <button
         className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
-        onClick={() => engine.setTimeRange({ from: 'now-1h', to: 'now' })}
+        onClick={() => stateStore.setPatch({ timeRange: { from: 'now-1h', to: 'now' } })}
       >
         Last 1h
       </button>
       <button
         className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
-        onClick={() => engine.setTimeRange({ from: 'now-24h', to: 'now' })}
+        onClick={() => stateStore.setPatch({ timeRange: { from: 'now-24h', to: 'now' } })}
       >
         Last 24h
       </button>
@@ -225,11 +227,13 @@ function renderPanel(props: PanelRenderProps) {
 }
 
 export function GrafanaStyleTab() {
+  const stateStore = useMemo(() => createMemoryDashboardStateStore(), [])
   const engine = useMemo(() => createDashboardEngine({
+    stateStore,
     panels: [tablePanel, statPanel, rowPanel],
     datasourcePlugins: [datasource],
     variableTypes: [optionVariable],
-  }), [])
+  }), [stateStore])
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>('cpu-stat')
   const [editable, setEditable] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -243,7 +247,7 @@ export function GrafanaStyleTab() {
         <h2 className="text-base font-semibold">Operations viewer</h2>
         <p className="text-sm text-gray-500">Operational dashboard workflow: variables, time range, editable grid, row panels, panel inspector, and dirty state.</p>
       </div>
-      <Toolbar engine={engine} />
+      <Toolbar engine={engine} stateStore={stateStore} />
       <div className="mb-4 flex items-center gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
         <button
           className={`rounded px-2 py-1 ${editable ? 'bg-gray-900 text-white' : 'border border-gray-300 bg-white'}`}
@@ -324,7 +328,7 @@ function GrafanaPanelEditor({
   }
 
   async function runPreview() {
-    const result = await engine.previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
+    const result = await createEditorAddon(engine).previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
     setPreviewRows(result.rawData.reduce((count, data) => count + data.rows.length, 0))
   }
 

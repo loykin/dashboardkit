@@ -26,6 +26,11 @@
       "types": "./dist/variables.d.ts",
       "import": "./dist/variables.js",
       "require": "./dist/variables.cjs"
+    },
+    "./addons": {
+      "types": "./dist/addons.d.ts",
+      "import": "./dist/addons.js",
+      "require": "./dist/addons.cjs"
     }
   },
   "files": [

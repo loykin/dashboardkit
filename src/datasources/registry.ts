@@ -9,6 +9,7 @@ import type {
 import { DatasourceNotFoundError, DatasourceTypeMismatchError } from './errors'
 
 export interface DatasourceRegistry {
+  register(def: DatasourcePluginDef): void
   get(uid: string): DatasourcePluginDef | undefined
   getForRequest(request: DataRequestConfig): DatasourcePluginDef
   tryGetForRequest(request: DataRequestConfig): DatasourcePluginDef | undefined
@@ -32,6 +33,10 @@ export function createDatasourceRegistry(
   }
 
   return {
+    register(def) {
+      byUid.set(def.uid, def)
+    },
+
     get(uid) {
       return byUid.get(uid)
     },

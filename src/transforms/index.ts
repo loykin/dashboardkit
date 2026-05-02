@@ -5,7 +5,7 @@ import type { QueryResult } from '../schema'
 export type TransformCalc = 'sum' | 'avg' | 'min' | 'max' | 'count' | 'first' | 'last'
 export type FilterOp = '>' | '<' | '>=' | '<=' | '==' | '!=' | 'contains' | 'startsWith'
 
-export type PanelTransformConfig =
+export type BuiltinTransformConfig =
   | { type: 'merge'; by?: string }
   | { type: 'groupBy'; by: string; calc: TransformCalc }
   | { type: 'calculate'; alias: string; expr: string }
@@ -13,6 +13,14 @@ export type PanelTransformConfig =
   | { type: 'filterByValue'; field: string; op: FilterOp; threshold: unknown }
   | { type: 'rename'; from: string; to: string }
   | { type: 'limit'; count: number }
+
+// Open type — allows custom transform types registered at runtime
+export type PanelTransformConfig = BuiltinTransformConfig | { type: string; [key: string]: unknown }
+
+export interface TransformPluginDef {
+  type: string
+  apply(results: QueryResult[], config: Record<string, unknown>): QueryResult[]
+}
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
@@ -202,31 +210,47 @@ function applyLimit(results: QueryResult[], count: number): QueryResult[] {
 export function applyTransforms(
   results: QueryResult[],
   transforms: readonly PanelTransformConfig[],
+  registry?: ReadonlyMap<string, TransformPluginDef>,
 ): QueryResult[] {
   let current = results
   for (const t of transforms) {
     switch (t.type) {
       case 'merge':
-        current = applyMerge(current, t.by)
+        current = applyMerge(current, (t as { by?: string }).by)
         break
-      case 'groupBy':
-        current = applyGroupBy(current, t.by, t.calc)
+      case 'groupBy': {
+        const cfg = t as { by: string; calc: TransformCalc }
+        current = applyGroupBy(current, cfg.by, cfg.calc)
         break
-      case 'calculate':
-        current = applyCalculate(current, t.alias, t.expr)
+      }
+      case 'calculate': {
+        const cfg = t as { alias: string; expr: string }
+        current = applyCalculate(current, cfg.alias, cfg.expr)
         break
-      case 'sortBy':
-        current = applySortBy(current, t.field, t.order)
+      }
+      case 'sortBy': {
+        const cfg = t as { field: string; order?: 'asc' | 'desc' }
+        current = applySortBy(current, cfg.field, cfg.order)
         break
-      case 'filterByValue':
-        current = applyFilterByValue(current, t.field, t.op, t.threshold)
+      }
+      case 'filterByValue': {
+        const cfg = t as { field: string; op: FilterOp; threshold: unknown }
+        current = applyFilterByValue(current, cfg.field, cfg.op, cfg.threshold)
         break
-      case 'rename':
-        current = applyRename(current, t.from, t.to)
+      }
+      case 'rename': {
+        const cfg = t as { from: string; to: string }
+        current = applyRename(current, cfg.from, cfg.to)
         break
+      }
       case 'limit':
-        current = applyLimit(current, t.count)
+        current = applyLimit(current, (t as { count: number }).count)
         break
+      default: {
+        const plugin = registry?.get(t.type)
+        if (plugin) current = plugin.apply(current, t as Record<string, unknown>)
+        break
+      }
     }
   }
   return current

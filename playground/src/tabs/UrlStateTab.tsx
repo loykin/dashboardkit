@@ -73,8 +73,9 @@ export function UrlStateTab() {
   const [search, setSearch] = React.useState(window.location.search)
   const [lastQueryVars, setLastQueryVars] = React.useState<Record<string, string | string[]>>({})
 
+  const stateStore = React.useMemo(() => createBrowserDashboardStateStore(), [])
+
   const engine = React.useMemo(() => {
-    const stateStore = createBrowserDashboardStateStore()
     const datasource = defineDatasource({
       uid: 'url-state-backend',
       type: 'backend',
@@ -103,7 +104,7 @@ export function UrlStateTab() {
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [staticVariableType],
     })
-  }, [setLastQueryVars])
+  }, [stateStore, setLastQueryVars])
 
   useLoadDashboard(engine, config)
 
@@ -120,7 +121,7 @@ export function UrlStateTab() {
 
   return (
     <div className="space-y-4">
-      <UrlControls engine={engine} search={search} />
+      <UrlControls engine={engine} stateStore={stateStore} search={search} />
 
       <DashboardGrid engine={engine} className="min-w-0">
         {(props) => <PanelShell {...props} />}
@@ -149,9 +150,11 @@ export function UrlStateTab() {
 
 function UrlControls({
   engine,
+  stateStore,
   search,
 }: {
   engine: ReturnType<typeof createDashboardEngine>
+  stateStore: ReturnType<typeof createBrowserDashboardStateStore>
   search: string
 }) {
   const country = useVariable(engine, 'country')
@@ -174,25 +177,25 @@ function UrlControls({
           </select>
         </label>
         <button
-          onClick={() => engine.setTimeRange({ from: 'now-1h', to: 'now' })}
+          onClick={() => stateStore.setPatch({ timeRange: { from: 'now-1h', to: 'now' } })}
           className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
         >
           Last 1h
         </button>
         <button
-          onClick={() => engine.setTimeRange({ from: 'now-24h', to: 'now' })}
+          onClick={() => stateStore.setPatch({ timeRange: { from: 'now-24h', to: 'now' } })}
           className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
         >
           Last 24h
         </button>
         <button
-          onClick={() => engine.setRefresh('30s')}
+          onClick={() => stateStore.setPatch({ refresh: '30s' })}
           className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
         >
           30s Refresh
         </button>
         <button
-          onClick={() => engine.setRefresh('')}
+          onClick={() => stateStore.setPatch({ refresh: '' })}
           className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
         >
           No Refresh

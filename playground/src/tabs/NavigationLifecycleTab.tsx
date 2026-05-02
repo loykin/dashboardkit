@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createDashboardEngine,
+  createEditorAddon,
   createMemoryDashboardStateStore,
   defineDatasource,
   definePanel,
@@ -490,7 +491,7 @@ function LifecycleEditor({ engine, panelId }: { engine: CoreEngineAPI; panelId: 
   async function handlePreview() {
     const draft = readDraft()
     setDraft(draft)
-    const result = await engine.previewPanel(panelId!, { ...instance!.config, ...draft })
+    const result = await createEditorAddon(engine).previewPanel(panelId!, { ...instance!.config, ...draft })
     setPreviewMeta(JSON.stringify(result.rawData[0]?.meta ?? {}, null, 2))
   }
 

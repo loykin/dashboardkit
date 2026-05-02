@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   createDashboardEngine,
+  createEditorAddon,
   defineDatasource,
   definePanel,
   defineVariableType,
@@ -515,7 +516,7 @@ test('previewPanel uses temp config and does not mutate panel state', async () =
   await new Promise<void>((r) => setTimeout(r, 50))
   const dataBefore = engine.getPanel('p1')?.data
 
-  const result = await engine.previewPanel('p1', {
+  const result = await createEditorAddon(engine).previewPanel('p1', {
     id: 'p1',
     type: 'table',
     gridPos: { x: 0, y: 0, w: 6, h: 4 },
@@ -549,7 +550,7 @@ test('previewPanel can be aborted via caller signal', async () => {
   await new Promise<void>((r) => setTimeout(r, 20))
 
   const ac = new AbortController()
-  const promise = engine.previewPanel(
+  const promise = createEditorAddon(engine).previewPanel(
     'nonexistent',
     {
       id: 'tmp',
@@ -575,7 +576,7 @@ test('previewPanel rejects immediately when caller signal is already aborted', a
   ac.abort()
 
   await assert.rejects(
-    () => engine.previewPanel(
+    () => createEditorAddon(engine).previewPanel(
       'p1',
       {
         id: 'p1',
@@ -794,7 +795,8 @@ test('time range change refreshes variables marked refreshOnTimeRangeChange', as
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+  const stateStore = createMemoryDashboardStateStore()
+  const engine = createDashboardEngine({ stateStore, panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -804,7 +806,7 @@ test('time range change refreshes variables marked refreshOnTimeRangeChange', as
   await new Promise<void>((r) => setTimeout(r, 50))
 
   assert.equal(resolveCount, 1)
-  engine.setTimeRange({ from: 'now-1h', to: 'now' })
+  stateStore.setPatch({ timeRange: { from: 'now-1h', to: 'now' } })
   await new Promise<void>((r) => setTimeout(r, 50))
 
   assert.equal(resolveCount, 2)
@@ -825,7 +827,8 @@ test('time range change does not refresh unmarked variables', async () => {
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+  const stateStore2 = createMemoryDashboardStateStore()
+  const engine = createDashboardEngine({ stateStore: stateStore2, panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -835,7 +838,7 @@ test('time range change does not refresh unmarked variables', async () => {
   await new Promise<void>((r) => setTimeout(r, 50))
 
   assert.equal(resolveCount, 1)
-  engine.setTimeRange({ from: 'now-1h', to: 'now' })
+  stateStore2.setPatch({ timeRange: { from: 'now-1h', to: 'now' } })
   await new Promise<void>((r) => setTimeout(r, 50))
 
   assert.equal(resolveCount, 1)
@@ -924,7 +927,7 @@ test('previewDataRequest runs one request without mutating panel state', async (
   await new Promise<void>((r) => setTimeout(r, 50))
 
   const before = engine.getPanel('p1')
-  const result = await engine.previewDataRequest(
+  const result = await createEditorAddon(engine).previewDataRequest(
     { id: 'preview', uid: 'ds', type: 'mock', query: 'preview' },
     { variablesOverride: { env: 'staging' } },
   )
@@ -968,7 +971,7 @@ test('previewDataRequest includes panel context when panelId is provided', async
   })
   await new Promise<void>((r) => setTimeout(r, 50))
 
-  await engine.previewDataRequest(
+  await createEditorAddon(engine).previewDataRequest(
     { id: 'preview', uid: 'ds', type: 'mock' },
     { panelId: 'p1' },
   )
@@ -1003,7 +1006,7 @@ test('previewDataRequest auth denial rejects without calling datasource', async 
   await new Promise<void>((r) => setTimeout(r, 50))
 
   await assert.rejects(
-    () => engine.previewDataRequest({ id: 'preview', uid: 'ds', type: 'mock' }),
+    () => createEditorAddon(engine).previewDataRequest({ id: 'preview', uid: 'ds', type: 'mock' }),
     /preview denied/,
   )
   assert.equal(calls, 0)
@@ -1035,7 +1038,7 @@ test('previewDataRequest can be aborted via caller signal', async () => {
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
   await new Promise<void>((r) => setTimeout(r, 50))
 
-  const promise = engine.previewDataRequest(
+  const promise = createEditorAddon(engine).previewDataRequest(
     { id: 'preview', uid: 'ds', type: 'mock' },
     { signal: ac.signal },
   )

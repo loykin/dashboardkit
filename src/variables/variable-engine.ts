@@ -1,7 +1,6 @@
 import type { StoreApi } from 'zustand/vanilla'
 import { createStore } from 'zustand/vanilla'
 import { buildVariableDAG, parseRefs } from '../query'
-import type { BuiltinVariable } from './builtins'
 import type {
   AuthContext,
   DashboardConfig,
@@ -23,7 +22,6 @@ export const ALL_OPTION_VALUE = '$__all'
 export interface VariableEngineOptions {
   variableTypes: VariableTypePluginDef[]
   datasourcePlugins: DatasourcePluginDef[]
-  builtinVariables?: BuiltinVariable[]
   stateStore: DashboardStateStore
   getAuthContext: () => AuthContext
   getDashboardConfig: () => DashboardConfig | null
@@ -35,6 +33,8 @@ export interface VariableEngineOptions {
 }
 
 export interface VariableEngine {
+  registerType(def: VariableTypePluginDef): void
+  registerEngineVariable(config: VariableConfig): void
   load(variables: VariableConfig[]): void
   refresh(): Promise<string[]>
   refreshOne(name: string): Promise<boolean>
@@ -130,6 +130,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
   let sortedVarNames: string[] = []
   let variableConfigs: VariableConfig[] = []
+  let engineScopedConfigs: VariableConfig[] = []
 
   const store: StoreApi<Record<string, VariableState>> = createStore<Record<string, VariableState>>(() => ({}))
 
@@ -199,7 +200,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
       const resolveCtx: VariableResolveContext = {
         datasourcePlugins: datasourceRegistry.toRecord(),
-        builtins: buildCtxBuiltins(snapshot.timeRange, dashboard, options.builtinVariables ?? []),
+        builtins: buildCtxBuiltins(snapshot.timeRange, dashboard),
         variables: expandedVariables(),
         dashboard,
         authContext: options.getAuthContext(),
@@ -247,10 +248,28 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
   }
 
   return {
-    load(variables) {
-      variableConfigs = variables
+    registerType(def) {
+      vtMap.set(def.id, def)
+    },
+
+    registerEngineVariable(cfg) {
+      const existing = engineScopedConfigs.findIndex((v) => v.name === cfg.name)
+      if (existing >= 0) {
+        engineScopedConfigs = engineScopedConfigs.map((v, i) => i === existing ? cfg : v)
+      } else {
+        engineScopedConfigs = [...engineScopedConfigs, cfg]
+      }
+    },
+
+    load(dashboardVars) {
+      const dashboardNames = new Set(dashboardVars.map((v) => v.name))
+      const effective = [
+        ...engineScopedConfigs.filter((v) => !dashboardNames.has(v.name)),
+        ...dashboardVars,
+      ]
+      variableConfigs = effective
       sortedVarNames = buildVariableDAG(
-        variables.map((v) => ({
+        effective.map((v) => ({
           name: v.name,
           ...(v.dataRequest ? { query: requestRefText(v.dataRequest) } : {}),
         })),
@@ -258,7 +277,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
 
       const snapshot = options.stateStore.getSnapshot()
       const initState: Record<string, VariableState> = {}
-      for (const v of variables) {
+      for (const v of effective) {
         initState[v.name] = {
           name: v.name,
           type: v.type,
@@ -319,7 +338,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
     getBuiltins() {
       const cfg = options.getDashboardConfig()
       const dashboard = cfg ? { id: cfg.id, title: cfg.title } : { id: '', title: '' }
-      return buildCtxBuiltins(options.stateStore.getSnapshot().timeRange, dashboard, options.builtinVariables ?? [])
+      return buildCtxBuiltins(options.stateStore.getSnapshot().timeRange, dashboard)
     },
 
     getState() {
