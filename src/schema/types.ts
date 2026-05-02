@@ -311,6 +311,8 @@ export type DashboardLoadStatePolicy = 'preserve' | 'replace-dashboard-variables
 export interface DashboardLoadOptions {
   statePolicy?: DashboardLoadStatePolicy
   state?: DashboardStateSnapshot
+  /** Force reload even if the same config reference was already loaded. Default: false. */
+  force?: boolean
 }
 
 export type PermissionEffect = 'allow' | 'deny'

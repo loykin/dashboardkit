@@ -64,12 +64,8 @@ interface PanelCacheEntry {
 
 // ─── Engine Implementation ──────────────────────────────────────────────────────
 
-// Encodes/decodes a time range for datetime variable values ("now-1h|now")
+// Decodes a datetime variable value ("now-1h|now") into { from, to }
 const DATETIME_SEP = '|'
-
-function encodeDatetime(range: { from: string; to: string }): string {
-  return `${range.from}${DATETIME_SEP}${range.to}`
-}
 
 function decodeDatetime(val: string | string[] | undefined): { from: string; to: string } | undefined {
   const str = Array.isArray(val) ? val[0] : val
@@ -106,6 +102,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
 
   // Phase E: cross-filter — panel-scoped variable overrides, engine memory only
   const panelSelections = new Map<string, Record<string, string | string[]>>()
+
+  // Tracks the last config input reference passed to load().
+  // Used to skip redundant reloads when the same object reference is passed again
+  // (e.g. when a React page component remounts due to navigation).
+  let lastLoadedInput: DashboardInput | null = null
 
   const listeners = new Set<(e: EngineEvent) => void>()
   const emit = (e: EngineEvent) => listeners.forEach((l) => l(e))
@@ -891,8 +892,14 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   const api: CoreEngineAPI = {
     // P2-1: load with optional state policy
     load(config: DashboardInput, loadOptions?: DashboardLoadOptions) {
+      const { statePolicy = 'preserve', state: explicitState, force = false } = loadOptions ?? {}
+
+      // Skip if this exact config object was already loaded and force is not set.
+      // Prevents accidental reloads when a React page component remounts (e.g. on navigation).
+      if (!force && config === lastLoadedInput && store.getState().config !== null) return
+      lastLoadedInput = config
+
       const parsed = DashboardConfigSchema.parse(config)
-      const { statePolicy = 'preserve', state: explicitState } = loadOptions ?? {}
 
       abortPanelRequests()
       panelSelections.clear()
@@ -939,6 +946,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
       store.setState({ variables: varEngine.getState() })
       syncPanelInstances()
       clearCache()
+      emit({ type: 'config-changed', config: parsed })
 
       void (async () => {
         try {
