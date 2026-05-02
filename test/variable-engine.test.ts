@@ -44,6 +44,7 @@ const dashboard: DashboardConfig = {
   refresh: '',
   links: [],
   permissions: [],
+  annotations: [],
 }
 
 test('variable engine resolves variables without a dashboard engine', async () => {

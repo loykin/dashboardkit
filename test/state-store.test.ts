@@ -117,7 +117,10 @@ test('external state store changes drive datasource query variables', async () =
   await engine.refreshPanel('sales-table')
 
   assert.deepEqual(lastOptions?.variables, { country: 'JP' })
-  assert.deepEqual(lastOptions?.timeRange, { from: 'now-30m', to: 'now' })
+  // timeRange is now resolved to ISO; raw preserves the original expression
+  assert.equal(lastOptions?.timeRange?.raw?.from, 'now-30m')
+  assert.equal(lastOptions?.timeRange?.raw?.to, 'now')
+  assert.ok(lastOptions?.timeRange?.from.includes('T'), 'from should be ISO')
 
   stateStore.setPatch({ variables: { country: 'US' } })
   await engine.refreshPanel('sales-table')

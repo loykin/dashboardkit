@@ -11,6 +11,7 @@ import { DatasourceNotFoundError, DatasourceTypeMismatchError } from './errors'
 export interface DatasourceRegistry {
   get(uid: string): DatasourcePluginDef | undefined
   getForRequest(request: DataRequestConfig): DatasourcePluginDef
+  tryGetForRequest(request: DataRequestConfig): DatasourcePluginDef | undefined
   getVariableSupport(uid: string): DatasourceVariableSupport<unknown> | undefined
   getEditorSupport(uid: string): DatasourceEditorSupport<unknown, unknown> | undefined
   getConnectorSupport(uid: string): DatasourceConnectorSupport<unknown> | undefined
@@ -42,6 +43,10 @@ export function createDatasourceRegistry(
         throw new DatasourceTypeMismatchError(request.uid, request.type, datasource.type)
       }
       return datasource
+    },
+
+    tryGetForRequest(request) {
+      return byUid.get(request.uid)
     },
 
     getVariableSupport(uid) {

@@ -3,6 +3,7 @@ import type { OptionSchema, ValidateOptionSchemaOptions, ValidationResult } from
 import type { DatasourcePluginDef } from '../plugins'
 import type { PanelPluginDef } from '../plugins'
 import type {
+  Annotation,
   AuthContext,
   AuthorizationDecision,
   AuthorizationRequest,
@@ -181,6 +182,9 @@ export interface CoreEngineAPI {
   clearPanelSelection(panelId: string): void
   clearAllPanelSelections(): void
   getPanelSelections(): Record<string, Record<string, string | string[]>>
+
+  // Annotations — fetch time-range event overlays from all non-hidden annotation queries
+  getAnnotations(timeRange?: { from: string; to: string }): Promise<Annotation[]>
 
   // Subscribe (returns unsubscribe function)
   subscribe(listener: (event: import('./types').EngineEvent) => void): () => void

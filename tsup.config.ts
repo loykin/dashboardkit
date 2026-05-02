@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
     react: 'src/react.ts',
     'url-state': 'src/adapters/url-state.ts',
+    variables: 'src/variables-entrypoint.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

@@ -452,6 +452,7 @@ test('updatePanel accepts panel input patch with data request defaults omitted',
     options: {},
     hide: false,
     permissions: [],
+    staleWhileRevalidate: false,
   })
 })
 

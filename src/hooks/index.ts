@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { CoreEngineAPI } from '../schema'
 import type {
+  Annotation,
   DashboardConfig,
   DashboardInput,
   DashboardLoadOptions,
@@ -161,6 +162,7 @@ export interface UsePanelResult<TData = unknown> {
   rawData: import('../schema/types').QueryResult[] | null
   loading: boolean
   error: string | null
+  streaming: boolean
   /** Panel DOM ref — attach to the panel root element to enable viewport virtualization */
   ref: React.RefCallback<HTMLElement>
 }
@@ -243,6 +245,7 @@ export function usePanel<TData = unknown>(
     rawData: panelState.rawData,
     loading: panelState.loading,
     error: panelState.error,
+    streaming: panelState.streaming,
     ref: refCallback,
   }
 }
@@ -428,6 +431,46 @@ export interface UseImeInputResult {
   ref: RefObject<HTMLInputElement | null>
   getValue(): string
   reset(value: string): void
+}
+
+// ─── useAnnotations ─────────────────────────────────────────────────────────────
+// Fetch annotation events for the current time range.
+// Refetches when the engine fires time-range-changed events.
+
+export interface UseAnnotationsResult {
+  annotations: Annotation[]
+  loading: boolean
+  error: string | null
+  refresh(): void
+}
+
+export function useAnnotations(
+  engine: CoreEngineAPI,
+  timeRange?: { from: string; to: string },
+): UseAnnotationsResult {
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const timeRangeRef = useRef(timeRange)
+  timeRangeRef.current = timeRange
+
+  const fetch = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    engine.getAnnotations(timeRangeRef.current).then(
+      (result) => { setAnnotations(result); setLoading(false) },
+      (err: unknown) => { setError(err instanceof Error ? err.message : String(err)); setLoading(false) },
+    )
+  }, [engine])
+
+  useEffect(() => {
+    fetch()
+    return engine.subscribe((e) => {
+      if (e.type === 'time-range-changed') fetch()
+    })
+  }, [engine, fetch])
+
+  return { annotations, loading, error, refresh: fetch }
 }
 
 export function useImeInput(initialValue: string): UseImeInputResult {

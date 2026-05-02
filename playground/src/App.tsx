@@ -10,8 +10,18 @@ import { UrlStateTab } from './tabs/UrlStateTab'
 import { GrafanaStyleTab } from './tabs/GrafanaStyleTab'
 import { SupersetStyleTab } from './tabs/SupersetStyleTab'
 import { NavigationLifecycleTab } from './tabs/NavigationLifecycleTab'
+import { TransformsTab } from './tabs/TransformsTab'
+import { CsvExportTab } from './tabs/CsvExportTab'
+import { StreamingTab } from './tabs/StreamingTab'
+import { CacheTtlTab } from './tabs/CacheTtlTab'
+import { AnnotationsTab } from './tabs/AnnotationsTab'
 
 const TABS = [
+  { id: 'transforms', label: 'Transforms', content: <TransformsTab /> },
+  { id: 'csv-export', label: 'CSV Export', content: <CsvExportTab /> },
+  { id: 'streaming', label: 'Streaming', content: <StreamingTab /> },
+  { id: 'cache-ttl', label: 'Cache TTL', content: <CacheTtlTab /> },
+  { id: 'annotations', label: 'Annotations', content: <AnnotationsTab /> },
   { id: 'navigation-lifecycle', label: 'Builder Lifecycle', content: <NavigationLifecycleTab /> },
   { id: 'grafana-style', label: 'Operations Viewer', content: <GrafanaStyleTab /> },
   { id: 'superset-style', label: 'Explore Cross-filter', content: <SupersetStyleTab /> },
@@ -29,7 +39,7 @@ type TabId = (typeof TABS)[number]['id']
 
 function tabFromSearch(): TabId {
   const tab = new URLSearchParams(window.location.search).get('tab')
-  return TABS.some((item) => item.id === tab) ? tab as TabId : 'navigation-lifecycle'
+  return TABS.some((item) => item.id === tab) ? tab as TabId : 'transforms'
 }
 
 export default function App() {

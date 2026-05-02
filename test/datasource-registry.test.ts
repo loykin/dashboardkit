@@ -57,7 +57,7 @@ test('datasource registry looks up plugins and validates request type', () => {
   assert.deepEqual(registry.list(), [datasource])
   assert.equal(registry.toRecord()['backend'], datasource)
   assert.equal(
-    registry.getForRequest({ id: 'main', uid: 'backend', type: 'mock', options: {}, hide: false, permissions: [] }),
+    registry.getForRequest({ id: 'main', uid: 'backend', type: 'mock', options: {}, hide: false, permissions: [], staleWhileRevalidate: false }),
     datasource,
   )
 })
@@ -66,11 +66,11 @@ test('datasource registry throws standard errors for missing and mismatched data
   const registry = createDatasourceRegistry([datasource])
 
   assert.throws(
-    () => registry.getForRequest({ id: 'main', uid: 'missing', type: 'mock', options: {}, hide: false, permissions: [] }),
+    () => registry.getForRequest({ id: 'main', uid: 'missing', type: 'mock', options: {}, hide: false, permissions: [], staleWhileRevalidate: false }),
     DatasourceNotFoundError,
   )
   assert.throws(
-    () => registry.getForRequest({ id: 'main', uid: 'backend', type: 'sql', options: {}, hide: false, permissions: [] }),
+    () => registry.getForRequest({ id: 'main', uid: 'backend', type: 'sql', options: {}, hide: false, permissions: [], staleWhileRevalidate: false }),
     DatasourceTypeMismatchError,
   )
 })

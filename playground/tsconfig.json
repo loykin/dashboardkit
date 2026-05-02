@@ -12,7 +12,8 @@
     "paths": {
       "@loykin/dashboardkit": ["../src/index.ts"],
       "@loykin/dashboardkit/react": ["../src/react.ts"],
-      "@loykin/dashboardkit/url-state": ["../src/adapters/url-state.ts"]
+      "@loykin/dashboardkit/url-state": ["../src/adapters/url-state.ts"],
+      "@loykin/dashboardkit/variables": ["../src/variables-entrypoint.ts"]
     }
   },
   "include": ["src", "vite.config.ts"],

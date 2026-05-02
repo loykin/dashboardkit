@@ -21,6 +21,11 @@
       "types": "./dist/url-state.d.ts",
       "import": "./dist/url-state.js",
       "require": "./dist/url-state.cjs"
+    },
+    "./variables": {
+      "types": "./dist/variables.d.ts",
+      "import": "./dist/variables.js",
+      "require": "./dist/variables.cjs"
     }
   },
   "files": [

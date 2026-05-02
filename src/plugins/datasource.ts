@@ -1,4 +1,6 @@
 import type {
+  Annotation,
+  AnnotationQuery,
   AuthContext,
   QueryOptions,
   QueryResult,
@@ -130,7 +132,26 @@ export interface DatasourcePluginDef<
   name?: string
   options?: TOptions
   optionsSchema?: OptionSchema
+  /** Default cache TTL for all requests from this datasource (ms). Overridden by dataRequest.cacheTtlMs. */
+  cacheTtlMs?: number
   query: (options: QueryOptions<TOptions>) => Promise<QueryResult>
+  /**
+   * Optional streaming alternative to query(). Called instead of query() when present.
+   * The returned function must unsubscribe and stop all callbacks.
+   */
+  subscribe?: (
+    options: QueryOptions<TOptions>,
+    onData: (result: QueryResult) => void,
+    onError: (error: Error) => void,
+  ) => () => void
+  /**
+   * Fetch time-range event overlays for the Annotations feature.
+   * Called by engine.getAnnotations() for each non-hidden annotation query.
+   */
+  queryAnnotations?: (
+    annotationQuery: AnnotationQuery,
+    options: QueryOptions<TOptions>,
+  ) => Promise<Annotation[]>
   metricFindQuery?: (
     query: string,
     vars: Record<string, string | string[]>,

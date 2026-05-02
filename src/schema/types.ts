@@ -40,8 +40,20 @@ export const DataRequestSchema = z
     options: z.record(z.unknown()).default({}),
     hide: z.boolean().default(false),
     permissions: z.array(PermissionRuleSchema).default([]),
+    cacheTtlMs: z.number().int().min(0).optional(),
+    staleWhileRevalidate: z.boolean().default(false),
   })
   .passthrough()
+
+// ─── Annotation Query ─────────────────────────────────────────────────────────
+export const AnnotationQuerySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  datasourceUid: z.string().min(1),
+  query: QueryDescriptorSchema,
+  color: z.string().optional(),
+  hide: z.boolean().default(false),
+})
 
 // ─── Variable Config ──────────────────────────────────────────────────────────
 export const VariableConfigSchema = z.object({
@@ -188,6 +200,9 @@ export const DashboardConfigSchema = z.object({
 
   // dashboard-level permission defaults
   permissions: z.array(PermissionRuleSchema).default([]),
+
+  // annotation queries — time-range event overlays
+  annotations: z.array(AnnotationQuerySchema).default([]),
 }).superRefine((dashboard, ctx) => {
   const variableNames = dashboard.variables.map((variable) => variable.name)
   if (variableNames.length !== new Set(variableNames).size) {
@@ -227,6 +242,19 @@ export type PermissionRule = z.infer<typeof PermissionRuleSchema>
 export type GridPos = z.infer<typeof GridPosSchema>
 export type DataRequestConfig = z.output<typeof DataRequestSchema>
 export type DataRequestInput = z.input<typeof DataRequestSchema>
+export type AnnotationQuery = z.output<typeof AnnotationQuerySchema>
+export type AnnotationQueryInput = z.input<typeof AnnotationQuerySchema>
+
+export interface Annotation {
+  id?: string
+  time: number
+  timeEnd?: number
+  title?: string
+  text?: string
+  tags?: string[]
+  color?: string
+  source?: AnnotationQuery
+}
 export type FieldConfig = z.infer<typeof FieldConfigSchema>
 export type ThresholdStep = z.infer<typeof ThresholdStepSchema>
 export type PanelLink = z.infer<typeof PanelLinkSchema>
@@ -244,9 +272,10 @@ export type PanelPatchInput = Omit<Partial<PanelInput>, 'dataRequests'> & {
 export type DashboardConfig = z.output<typeof DashboardConfigSchema>
 type DashboardSchemaInput = z.input<typeof DashboardConfigSchema>
 // Input type (before parsing): use this when writing a config literal.
-export type DashboardInput = Omit<DashboardSchemaInput, 'panels' | 'variables'> & {
+export type DashboardInput = Omit<DashboardSchemaInput, 'panels' | 'variables' | 'annotations'> & {
   variables?: VariableInput[]
   panels: PanelInput[]
+  annotations?: AnnotationQueryInput[]
 }
 export type DashboardPatchInput = Partial<
   Omit<DashboardInput, 'schemaVersion' | 'id' | 'panels' | 'variables'>
@@ -342,7 +371,8 @@ export interface QueryOptions<TOptions = Record<string, unknown>> {
   variables: Record<string, string | string[]>
   datasourceOptions: TOptions
   authContext?: AuthContext
-  timeRange?: { from: string; to: string }
+  /** Resolved ISO timestamps; `raw` contains the original relative expressions */
+  timeRange?: { from: string; to: string; raw?: { from: string; to: string } }
   maxDataPoints?: number
   /** AbortSignal — cancelled when a newer request supersedes this one */
   signal?: AbortSignal
@@ -396,6 +426,7 @@ export interface PanelState {
   width: number
   height: number
   active: boolean // whether the panel is in the viewport
+  streaming: boolean // true when backed by a live subscription
 }
 
 // ─── Runtime Panel Instances ─────────────────────────────────────────────────

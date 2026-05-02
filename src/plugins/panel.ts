@@ -4,6 +4,7 @@ import type {
   QueryResult,
 } from '../schema'
 import type { OptionSchema } from '../schema'
+import type { PanelTransformConfig } from '../transforms'
 
 export type PluginComponent<Props> = (props: Props) => unknown
 
@@ -56,6 +57,11 @@ export interface PanelPluginDef<TOptions = Record<string, unknown>, TData = unkn
   description?: string
   optionsSchema: OptionSchema
   defaultOptions?: TOptions
+  /**
+   * Declarative transform pipeline applied to raw QueryResult[] before transform() is called.
+   * Each step is a pure function; steps run in order.
+   */
+  transforms?: PanelTransformConfig[]
   transform?: (results: QueryResult[], ctx?: PanelTransformContext) => TData
   // Method shorthand makes viewer/editor bivariant in their Props parameter,
   // which allows PanelPluginDef<Opts, SpecificData> to be assigned to
