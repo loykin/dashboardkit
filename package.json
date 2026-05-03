@@ -82,5 +82,29 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.58.2"
   },
+  "keywords": [
+    "dashboard",
+    "dashboard-engine",
+    "panel",
+    "data-visualization",
+    "headless",
+    "react",
+    "variables",
+    "interpolation",
+    "grafana-like",
+    "grid-layout",
+    "cross-filter",
+    "streaming",
+    "annotations",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loykin/dashboardkit.git"
+  },
+  "homepage": "https://loykin.github.io/dashboardkit/",
+  "bugs": {
+    "url": "https://github.com/loykin/dashboardkit/issues"
+  },
   "license": "MIT"
 }

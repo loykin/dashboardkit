@@ -26,9 +26,11 @@ a database, manage datasource credentials, or dictate your UI design.
 - **Panel query cache**: panel-scoped cache with targeted invalidation
 - **Authorization hook**: block panel, variable, and datasource queries before a
   datasource plugin runs
-- **React adapter**: `DashboardGrid`, hooks, draft editor helpers, and URL state
-  adapter are optional entrypoints
-- **ESM + CJS**: ships import and require builds with declarations
+- **Addon model**: cross-filter, panel editor helpers, and annotations are
+  opt-in addons built on the public engine API
+- **React adapter**: `DashboardGrid`, hooks, and URL state adapter are optional
+  entrypoints
+- **ESM + CJS**: ships both builds with full TypeScript declarations
 
 ## Installation
 
@@ -42,75 +44,92 @@ React rendering helpers are optional but require these peer dependencies:
 pnpm add react react-dom react-grid-layout
 ```
 
-`zod` and `zustand` are regular package dependencies and do not need to be
-installed separately by consumers.
+`zod` and `zustand` are bundled dependencies and do not need to be installed
+separately.
 
 ## Package Entrypoints
 
 ```ts
 import { createDashboardEngine } from '@loykin/dashboardkit'
-import { DashboardGrid } from '@loykin/dashboardkit/react'
+import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 ```
 
 ## Core Model
 
-DashboardKit has two different kinds of state:
+DashboardKit separates two kinds of state:
 
-- **Dashboard config**: panels, variables, layout, links, permissions, defaults.
-  After `engine.load(config)`, this is owned by the engine and can be mutated
-  through engine CRUD APIs.
-- **Dashboard input state**: selected variable values, time range, and refresh
+- **Dashboard config** — panels, variables, layout, links, permissions. After
+  `engine.load(config)` the engine owns this and exposes it through CRUD APIs.
+- **Dashboard input state** — selected variable values, time range, and refresh
   interval. This lives in a `DashboardStateStore`, which can be memory-backed,
   URL-backed, or app-provided.
 
-Unknown external query/state keys are preserved. A dashboard variable named
-`country` may read/write `var-country`, but the library must not delete unrelated
-keys such as `auth-token`, router params, or app-specific flags.
+Unknown URL query params are preserved. A variable named `country` reads/writes
+`var-country` but the library never touches unrelated keys like `auth-token` or
+app-specific router params.
 
 ## Quick Start
 
 ```tsx
 import {
   createDashboardEngine,
+  builtinVariableTypes,
   defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
-import { DashboardGrid, useLoadDashboard } from '@loykin/dashboardkit/react'
+import {
+  DashboardGrid,
+  useLoadDashboard,
+  usePanel,
+} from '@loykin/dashboardkit/react'
 
-const datasource = defineDatasource({
+// 1. Define a datasource plugin
+const myDatasource = defineDatasource({
   uid: 'main-api',
   type: 'backend',
-  options: { baseUrl: '/api' },
-  async query({ dashboardId, panelId, requestId, query, variables, timeRange, datasourceOptions }) {
-    const response = await fetch(`${datasourceOptions.baseUrl}/dashboards/query`, {
+  async query({ query, variables, timeRange, datasourceOptions }) {
+    const res = await fetch('/api/query', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ dashboardId, panelId, requestId, query, variables, timeRange }),
+      body: JSON.stringify({ query, variables, timeRange }),
     })
-    return response.json()
+    // Must return { columns: [{name, type}], rows: unknown[][] }
+    return res.json()
   },
 })
 
+// 2. Define a panel plugin
 const tablePanel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {},
   transform(results) {
+    // results is QueryResult[]. Return whatever shape your component needs.
     return results[0]?.rows ?? []
   },
 })
 
+// 3. Create the engine — pass builtinVariableTypes to enable query/custom/textbox variables
 const engine = createDashboardEngine({
-  datasourcePlugins: [datasource],
+  datasourcePlugins: [myDatasource],
   panels: [tablePanel],
-  variableTypes: [],
+  variableTypes: builtinVariableTypes,
 })
 
+// 4. Define a dashboard config
 const dashboard = {
   schemaVersion: 1 as const,
   id: 'sales',
   title: 'Sales',
+  variables: [
+    {
+      name: 'country',
+      type: 'query',
+      label: 'Country',
+      dataRequest: { id: 'q', uid: 'main-api', type: 'backend', query: 'countries' },
+    },
+  ],
   panels: [
     {
       id: 'orders',
@@ -118,255 +137,486 @@ const dashboard = {
       title: 'Orders',
       gridPos: { x: 0, y: 0, w: 12, h: 8 },
       dataRequests: [
-        { id: 'main', uid: 'main-api', type: 'backend', query: 'orders.list' },
+        // Include "$country" in options so the engine detects the variable dependency
+        { id: 'main', uid: 'main-api', type: 'backend', query: 'orders.list', options: { country: '$country' } },
       ],
     },
   ],
 }
 
-export function DashboardPage() {
+// 5. Render
+function DashboardPage() {
   useLoadDashboard(engine, dashboard)
 
   return (
     <DashboardGrid engine={engine}>
-      {({ config, data, loading, error }) => {
-        if (loading) return <div>Loading</div>
-        if (error) return <div>{error}</div>
-        return (
-          <section>
-            <h2>{config.title}</h2>
-            <pre>{JSON.stringify(data, null, 2)}</pre>
-          </section>
-        )
-      }}
+      {(props) => <TablePanel panelId={props.panelId} />}
     </DashboardGrid>
   )
 }
+
+function TablePanel({ panelId }: { panelId: string }) {
+  const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
+  if (loading) return <div>Loading…</div>
+  if (error)   return <div>{error}</div>
+  return <pre>{JSON.stringify(data, null, 2)}</pre>
+}
 ```
 
-`DashboardGrid` reads layout and runtime panel instances from the engine. Do not
-pass the same config back into the grid as a prop.
+### Variable dependency detection
+
+The engine scans panel `dataRequests[].options` (as JSON) for `$varname`
+references to build the dependency graph. A panel only re-queries when a
+variable it references changes. **There is no separate declaration** — putting
+`country: '$country'` anywhere in `options` is sufficient.
 
 ## Builder Flow
 
-Use engine APIs for committed dashboard config mutations:
-
 ```ts
+// Add a panel
 await engine.addPanel({
   id: 'latency',
   type: 'stat',
-  title: 'Latency',
+  title: 'P95 Latency',
   gridPos: { x: 0, y: 0, w: 6, h: 4 },
-  dataRequests: [{ id: 'main', uid: 'main-api', type: 'backend', query: 'latency.p95' }],
+  dataRequests: [{ id: 'q', uid: 'main-api', type: 'backend', query: 'latency.p95' }],
 })
 
-await engine.updatePanel('latency', {
-  title: 'P95 latency',
-  options: { unit: 'ms' },
-})
+// Update a panel (cannot change its id)
+await engine.updatePanel('latency', { title: 'Latency (p95)', options: { unit: 'ms' } })
 
-await engine.addVariable({
-  name: 'country',
-  type: 'static',
-  defaultValue: 'KR',
-  options: { values: ['KR', 'US'] },
-})
+// Remove a panel
+await engine.removePanel('latency')
 
-await engine.updateVariable('country', {
-  label: 'Country',
-  defaultValue: 'US',
-})
+// Add a variable
+await engine.addVariable({ name: 'env', type: 'custom', options: { values: 'prod,staging' } })
 
-await engine.updateDashboard({
-  title: 'Production dashboard',
-  tags: ['prod', 'ops'],
-})
+// Update a variable (cannot rename — update all $env references manually first)
+await engine.updateVariable('env', { label: 'Environment', defaultValue: 'prod' })
 
-const configToSave = engine.getConfig()
+// Remove a variable
+await engine.removeVariable('env')
+
+// Patch dashboard metadata (cannot change id, schemaVersion, panels, or variables)
+await engine.updateDashboard({ title: 'Production dashboard', tags: ['prod'] })
+
+// Save and reload
+const saved = engine.getConfig()
+// ... persist saved somewhere ...
+engine.load(saved, { statePolicy: 'preserve' }) // keeps variable selections
 ```
 
-Save `configToSave` in your app/backend. Reload it later with
-`engine.load(configToSave)`.
+`statePolicy` options:
 
-Structural rules:
+| Value | Behaviour |
+|---|---|
+| `'preserve'` | Keep current variable values and time range |
+| `'replace-dashboard-variables'` | Reset variable values from config defaults |
+| _(omitted)_ | Reset all input state |
 
-- `updatePanel()` cannot change a panel id.
-- Runtime repeat instance ids are not accepted by panel CRUD APIs; edit the
-  origin panel id.
-- `updateVariable()` cannot rename a variable. Renaming needs an explicit
-  migration of all references.
-- `updateDashboard()` does not replace `id`, `schemaVersion`, `panels`, or
-  `variables`; use the dedicated APIs for those structures.
-
-## Datasource Responsibility
-
-DashboardKit does not automatically mutate query strings before calling a
-datasource. It passes both:
-
-- the original request descriptor: `query`, `requestOptions`, `dataRequest`
-- resolved variables: `variables`
-
-Datasource plugins decide how to use them.
+## Datasource Plugin
 
 ```ts
-const datasource = defineDatasource({
-  uid: 'metrics',
-  type: 'prometheus',
-  async query({ query, variables }) {
-    const raw = String(query ?? '')
-    const expression = raw.replace(/\$job/g, String(variables.job ?? ''))
-    return runPrometheusQuery(expression)
+import { defineDatasource } from '@loykin/dashboardkit'
+
+const datasource = defineDatasource<MyOptions, MyQuery>({
+  uid: 'my-ds',
+  type: 'my-type',
+  options: { baseUrl: '/api' },
+  cacheTtlMs: 30_000, // optional default cache TTL
+
+  async query({ query, variables, timeRange, datasourceOptions, dataRequest }) {
+    // DashboardKit does NOT interpolate queries — the datasource decides how
+    // to use the raw query descriptor + resolved variables.
+    return {
+      columns: [{ name: 'ts', type: 'time' }, { name: 'value', type: 'number' }],
+      rows: [[1704067200000, 42]],
+    }
+  },
+
+  // Optional: streaming alternative to query()
+  subscribe(options, onData, onError) {
+    const ws = openWebSocket(options)
+    ws.onmessage = (e) => onData(JSON.parse(e.data))
+    ws.onerror = (e) => onError(new Error(String(e)))
+    return () => ws.close() // must return unsubscribe function
+  },
+
+  // Optional: used by `query`-type variables
+  async metricFindQuery(query, variables) {
+    const items = await fetch(`/api/lookup?q=${query}`).then((r) => r.json())
+    return items.map((v: string) => ({ label: v, value: v }))
   },
 })
 ```
 
-This is intentional. SQL, PromQL, HTTP parameters, and backend query ids all need
-different binding rules. For secure dashboards, prefer sending `dashboardId`,
-`panelId`, `requestId`, `variables`, and `timeRange` to your backend and building
-executable SQL/PromQL server-side.
+`query()` receives:
 
-## State Store And URL State
+```ts
+interface QueryOptions<TOptions> {
+  dashboardId: string
+  panelId: string
+  requestId: string
+  query: unknown           // dataRequest.query (raw)
+  variables: Record<string, string | string[]>
+  timeRange?: { from: string; to: string }
+  datasourceOptions: TOptions
+  dataRequest: DataRequestConfig
+  signal?: AbortSignal
+}
+```
+
+Return value must be `QueryResult`:
+
+```ts
+interface QueryResult {
+  columns: Array<{ name: string; type: string }>
+  rows: unknown[][]
+  meta?: Record<string, unknown>
+}
+```
+
+## Panel Plugin
+
+```ts
+import { definePanel, applyOptionDefaults } from '@loykin/dashboardkit'
+
+const statPanel = definePanel({
+  id: 'stat',
+  name: 'Stat',
+  optionsSchema: {
+    unit:      { type: 'string', label: 'Unit', default: 'short' },
+    threshold: { type: 'number', label: 'Threshold', default: 0, min: 0 },
+    color:     { type: 'color',  label: 'Color', default: '#3b82f6' },
+    inverted:  { type: 'boolean', label: 'Invert', default: false },
+    mode:      { type: 'select', label: 'Mode', default: 'last',
+                 choices: [{ label: 'Last', value: 'last' }, { label: 'Sum', value: 'sum' }] },
+  },
+  transform(results: QueryResult[]) {
+    // results[0] is the first dataRequest result
+    return results[0]?.rows.at(-1)?.[0] ?? null
+  },
+})
+
+// Apply defaults when reading options in your React component
+const options = applyOptionDefaults(statPanel.optionsSchema, panel.options)
+```
+
+Option schema field types: `string`, `number`, `boolean`, `select`,
+`multiselect`, `color`, `json`, `array`. Validation metadata: `required`,
+`default`, `min`, `max`, `integer`, `minLength`, `maxLength`, `pattern`,
+`choices`, `items`, `minItems`, `maxItems`, custom `validate()`.
+
+## Variable Types
+
+Pass `builtinVariableTypes` to the engine to enable the built-in variable types.
+Without it, none of the types below will resolve.
+
+```ts
+import { createDashboardEngine, builtinVariableTypes } from '@loykin/dashboardkit'
+
+const engine = createDashboardEngine({
+  variableTypes: builtinVariableTypes,
+  // ...
+})
+```
+
+Built-in types:
+
+| `type` | Description |
+|---|---|
+| `query` | Calls `datasource.metricFindQuery(query, vars)` and populates options from the result |
+| `custom` | Comma-separated static values. `options.values = 'KR,US,JP'` |
+| `textbox` | Free-text input with `defaultValue` |
+| `constant` | Fixed hidden value |
+| `interval` | Time interval picker (`1m`, `5m`, `1h`, …) |
+| `datetime` | Time range via `from`/`to` builtins |
+| `refresh` | Auto-refresh interval |
+
+Custom variable types can be added with `defineVariableType()`:
+
+```ts
+import { defineVariableType } from '@loykin/dashboardkit'
+
+const myType = defineVariableType<{ endpoint: string }>({
+  id: 'my-type',
+  name: 'My Type',
+  optionsSchema: { endpoint: { type: 'string', label: 'Endpoint' } },
+  async resolve(config, options, ctx) {
+    const items = await fetch(options.endpoint).then((r) => r.json())
+    return items.map((v: string) => ({ label: v, value: v }))
+  },
+})
+
+const engine = createDashboardEngine({
+  variableTypes: [...builtinVariableTypes, myType],
+})
+```
+
+## State Store and URL State
 
 ```ts
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 
 const stateStore = createBrowserDashboardStateStore()
 
-const engine = createDashboardEngine({
-  stateStore,
-  datasourcePlugins,
-  panels,
-  variableTypes,
-})
+const engine = createDashboardEngine({ stateStore, datasourcePlugins, panels, variableTypes })
 
-engine.load(config, { statePolicy: 'replace-dashboard-variables' })
+// Load with preserved variable values from URL
+engine.load(config, { statePolicy: 'preserve' })
 
+// Write state — syncs to URL query params automatically
 engine.setVariable('country', 'KR')
-engine.setTimeRange({ from: 'now-6h', to: 'now' })
-engine.setRefresh('30s')
+stateStore.setPatch({ timeRange: { from: 'now-6h', to: 'now' }, refresh: '30s' })
 ```
 
-The URL state adapter only owns dashboard state keys. Unknown URL query params
-are preserved.
+Variable `country` reads/writes `?var-country=KR`. Unknown URL params are
+preserved.
+
+## Addons
+
+Addons are opt-in and built on top of `CoreEngineAPI`. They do not modify the
+engine — they return a separate API object.
+
+### Cross-filter
+
+```ts
+import { createCrossFilterAddon } from '@loykin/dashboardkit'
+
+const cf = createCrossFilterAddon(engine)
+
+cf.setPanelSelection('bar-chart', { region: 'KR' }) // scopes other panels' queries
+cf.clearPanelSelection('bar-chart')
+cf.clearAllPanelSelections()
+cf.getPanelSelections() // → Record<panelId, Record<dimension, value>>
+```
+
+`setPanelSelection` writes a query scope to the target panel via
+`engine.setPanelQueryScope()`, then invalidates the cache and refreshes all
+panels. The scope values are merged into `variables` when querying other panels.
+
+### Editor
+
+```ts
+import { createEditorAddon } from '@loykin/dashboardkit'
+
+const editor = createEditorAddon(engine)
+
+// Preview a data request without committing it
+const result = await editor.previewDataRequest({
+  id: 'preview', uid: 'main-api', type: 'backend', query: 'orders.list',
+})
+
+// Preview a panel with a temporary config (for live editor preview)
+const { data, rawData } = await editor.previewPanel('orders', {
+  ...currentPanel,
+  dataRequests: [{ id: 'q', uid: 'main-api', type: 'backend', options: { by: 'country' } }],
+})
+```
+
+## React Adapter
+
+### DashboardGrid
+
+```tsx
+import { DashboardGrid } from '@loykin/dashboardkit/react'
+
+<DashboardGrid engine={engine} editable onLayoutChange={handleLayout}>
+  {(props) => (
+    // props: { panelId, panelType, instance, config, options, data, loading, error, ref }
+    <MyPanel {...props} />
+  )}
+</DashboardGrid>
+```
+
+`DashboardGrid` measures its container width and drives the react-grid-layout
+underneath. Pass `editable` to enable drag and resize.
+
+`PanelRenderProps`:
+
+```ts
+interface PanelRenderProps {
+  panelId: string
+  panelType: string
+  instance: PanelRuntimeInstance  // runtime-expanded instance (may differ from origin for repeat panels)
+  config: PanelConfig             // resolved panel config
+  options: Record<string, unknown>
+  data: unknown                   // output of panel.transform(results)
+  rawData: QueryResult[] | null
+  loading: boolean
+  error: string | null
+  ref: React.RefCallback<HTMLElement>  // attach to panel root for viewport virtualization
+}
+```
+
+### Hooks
+
+```ts
+// Load a dashboard config into the engine (idempotent — skips if same ref)
+useLoadDashboard(engine, config, options?)
+
+// Subscribe to panel state (data, loading, error)
+const { data, loading, error } = usePanel<T>(engine, panelId)
+
+// Subscribe to a variable (value, options list, loading, setter)
+const { value, options, loading, setValue } = useVariable(engine, name)
+
+// Subscribe to all engine events
+useEngineEvent(engine, (event) => { ... })
+
+// Notify when dashboard config changes
+useConfigChanged(engine, () => { ... })
+
+// Draft editor helpers — keeps uncommitted state separate from the engine
+const draft = usePanelDraftEditor(engine, panelId)
+```
+
+### Engine Events
+
+```ts
+engine.subscribe((event) => {
+  switch (event.type) {
+    case 'config-changed':      // dashboard config was mutated
+    case 'panel-data-changed':  // a panel finished loading
+    case 'variable-changed':    // a variable value or options changed
+    case 'panel-selection-changed': // cross-filter selection changed
+    case 'authorization-denied':    // a query was blocked by the authorize hook
+  }
+})
+```
 
 ## API Overview
 
 ### Engine
 
 ```ts
-engine.load(config, options?)
-engine.getConfig()
+// Config
+engine.load(config, options?)                     // { statePolicy?: 'preserve' | 'replace-dashboard-variables' }
+engine.getConfig()                                // → DashboardConfig | null
 
+// Panels
 engine.addPanel(panel, options?)
 engine.updatePanel(panelId, patch, options?)
 engine.removePanel(panelId, options?)
-engine.previewPanel(panelId, tempPanel, options?)
-engine.previewDataRequest(request, options?)
+engine.getPanelInstances()                        // runtime-expanded instances
+engine.getPanelInstance(instanceId)
+engine.getPanelDependencies(panelId)              // which variables a panel depends on
+engine.getPanelReadiness(panelId)
+engine.refreshPanel(panelId)
+engine.refreshAll()
+engine.validatePanelOptions(type, options)
 
+// Variables
 engine.addVariable(variable, options?)
 engine.updateVariable(name, patch, options?)
 engine.removeVariable(name, options?)
 engine.setVariable(name, value)
+engine.getVariable(name)
 engine.refreshVariable(name)
 engine.refreshVariables()
 engine.getVariableReadiness(names)
 
+// Dashboard metadata
 engine.updateDashboard(patch, options?)
+engine.getTimeRange()                             // read-only; write via stateStore
+engine.getRefresh()                               // read-only; write via stateStore
 
-engine.setTimeRange(range)
-engine.setRefresh(refresh)
-engine.refreshPanel(panelId)
-engine.refreshAll()
+// Authorization
+engine.setAuthContext(context)
+engine.getAuthContext()
 
-engine.setPanelSelection(panelId, filters)
-engine.clearPanelSelection(panelId)
-engine.clearAllPanelSelections()
+// Primitives (for addon authoring)
+engine.setPanelQueryScope(panelId, scope | null)  // cross-filter scope per panel
+engine.getPanelQueryScopes()
+engine.executeDataRequest(request, options?)
+engine.applyPanelTransforms(type, results)
+engine.invalidateCache(panelIds?)
 
-engine.subscribe(listener)
+// Lifecycle
+engine.abortAll()   // cancel in-flight requests (keep engine alive)
+engine.destroy()    // cancel requests + clear listeners + unsubscribe store
+
+// Runtime registration (add plugins after creation)
+engine.registerPanel(def)
+engine.registerDatasource(def)
+engine.registerVariableType(def)
+engine.registerTransform(def)
+
+// Events
+engine.subscribe(listener)     // → unsubscribe function
 ```
 
-### React Hooks
+## Query Interpolation
+
+`interpolate()` is a standalone utility — it is not called automatically by the
+engine. Use it inside a datasource `query()` when you want template-style variable
+substitution.
 
 ```ts
-useLoadDashboard(engine, config, options?)
-useDashboard(engine)
-usePanel(engine, panelId)
-useVariable(engine, name)
-useEngineEvent(engine, handler)
-useConfigChanged(engine, handler)
+import { interpolate } from '@loykin/dashboardkit'
 
-usePanelDraftEditor(engine, panelId)
-useVariableEditor(engine, name)
-useOptionsChange(options, onOptionsChange)
-useImeInput(initialValue)
-```
-
-`usePanelDraftEditor()` keeps uncommitted editor state separate from the engine
-config. Use `previewPanel()` for previews and `updatePanel()` to commit.
-
-## Plugin Definitions
-
-### Datasource
-
-```ts
 const datasource = defineDatasource({
-  uid: 'main-api',
-  type: 'backend',
-  options: { baseUrl: '/api' },
-  async query(options) {
-    return {
-      columns: [{ name: 'value', type: 'number' }],
-      rows: [[1]],
+  uid: 'postgres',
+  type: 'postgres',
+  async query({ query, variables, timeRange }) {
+    const sql = interpolate(String(query), {
+      variables,
+      builtins: {
+        from: String(timeRange?.from ?? ''),
+        to:   String(timeRange?.to   ?? ''),
+      },
+      functions: {},
+      formatters: {
+        // custom format: ${city:sqlin} → 'seoul', 'busan'
+        sqlin: (val) =>
+          (Array.isArray(val) ? val : [val]).map((v) => `'${v}'`).join(', '),
+      },
+    })
+    return runQuery(sql)
+  },
+})
+```
+
+Built-in format specifiers: `csv`, `pipe`, `json`, `doublequote`, `singlequote`,
+`sqlstring`, `sqlin`, `glob`, `regex`, `lucene`, `percentencode`, `text`, `raw`.
+
+Syntax:
+- `$varname` — default format
+- `${varname:format}` — named format
+- `$__timeFilter(col)` — built-in function (if registered in `functions`)
+
+## Authorization
+
+```ts
+const engine = createDashboardEngine({
+  authContext: { subject: { id: 'user-1', roles: ['viewer'] } },
+  authorize(request) {
+    // request.action: 'datasource:query' | 'variable:query' | 'annotation:query'
+    // request.resourceId: datasource uid
+    // request.context: { panelId?, variableName?, dashboardId }
+    if (request.action === 'datasource:query' && request.resourceId === 'admin-only') {
+      return { allowed: false, reason: 'Viewers cannot query admin datasource' }
     }
+    return true
   },
 })
+
+// Update auth context at runtime (e.g. after login)
+engine.setAuthContext({ subject: { id: 'user-2', roles: ['admin'] } })
 ```
 
-### Panel
+## Engine Lifecycle
+
+The engine should live for the lifetime of the dashboard session. Abort in-flight
+requests when navigating away, and destroy when the engine is no longer needed.
 
 ```ts
-import { applyOptionDefaults, definePanel } from '@loykin/dashboardkit'
-
-const statPanel = definePanel({
-  id: 'stat',
-  name: 'Stat',
-  optionsSchema: {
-    title: { type: 'string', label: 'Title', required: true },
-    unit: { type: 'string', label: 'Unit', default: 'short' },
-  },
-  transform(results) {
-    return results[0]?.rows.at(-1)?.[0] ?? null
-  },
-})
-
-const options = applyOptionDefaults(statPanel.optionsSchema, panelConfig.options)
+// React — abort when leaving the dashboard section, destroy on app unmount
+useEffect(() => () => engine.abortAll(), [engine])   // layout-level effect
+useEffect(() => () => engine.destroy(),  [engine])   // app-level effect
 ```
 
-Option schemas support `string`, `number`, `boolean`, `select`, `multiselect`,
-`color`, `json`, and `array` fields. Validation metadata includes `required`,
-`default`, `min`, `max`, `integer`, `minLength`, `maxLength`, `pattern`,
-`choices`, `items`, `minItems`, `maxItems`, and custom `validate()`.
-
-### Variable Type
-
-```ts
-import { defineVariableType } from '@loykin/dashboardkit'
-
-const staticVariable = defineVariableType<{ values?: string[] }>({
-  id: 'static',
-  name: 'Static',
-  optionsSchema: {},
-  async resolve(config, options) {
-    const values = Array.isArray(options.values) ? options.values : []
-    return values.map((value) => ({ label: value, value }))
-  },
-})
-```
-
-## Dashboard Config
-
-`DashboardInput` accepts omitted defaults. `DashboardConfig` is the parsed output
-with defaults filled.
+## Dashboard Config Schema
 
 ```ts
 interface DashboardInput {
@@ -385,46 +635,29 @@ interface DashboardInput {
 }
 ```
 
-`schemaVersion` is this library's dashboard schema version. It is currently
-`1`.
-
-## Authorization
-
-```ts
-const engine = createDashboardEngine({
-  datasourcePlugins,
-  panels,
-  variableTypes,
-  authContext: { subject: { id: 'user-1', roles: ['viewer'] } },
-  authorize(request) {
-    if (request.action === 'datasource:query') {
-      return { allowed: true }
-    }
-    return true
-  },
-})
-```
-
-Authorization runs before datasource calls for panel queries, variable queries,
-and preview requests.
+`schemaVersion` is currently `1`. `DashboardInput` accepts omitted defaults;
+`DashboardConfig` is the fully-parsed output.
 
 ## Playground
 
-The playground lives in `playground/`.
+The playground lives in `playground/` and is the single deployable demo app.
+It includes a full dashboard demo (panel editor, variables, datasource management)
+alongside feature-specific examples for every engine capability.
 
 ```bash
+cd playground
 pnpm dev
 ```
 
-Primary examples:
+Navigate using the sidebar. Key sections:
 
-- `?tab=navigation-lifecycle`: builder lifecycle, config CRUD, save with
-  `getConfig()`, reload saved config, and dashboard navigation
-- `?tab=grafana-style`: operations viewer, variables, time range, row panels,
-  editable grid, and panel inspector
-- `?tab=superset-style`: exploration workflow with chart cross-filtering and
-  preview/edit sync
-- `?tab=url-state`: URL-backed dashboard state store
+- **Full Dashboard** — complete dashboard with panel editor, variable bar,
+  datasource CRUD, cross-filter, and stale-data-while-loading behavior
+- **Operations Viewer** — variables, time range, row panels, editable grid
+- **Explore Cross-filter** — chart cross-filtering and preview/edit sync
+- **Builder Lifecycle** — config CRUD, save with `getConfig()`, reload
+- **interpolate()** — variable interpolation with custom formatters
+- **URL State** — URL-backed dashboard state store
 
 ## Development
 
