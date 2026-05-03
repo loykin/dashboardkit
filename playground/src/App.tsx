@@ -1,4 +1,16 @@
-import { useEffect, useState } from 'react'
+import { Navigate, Outlet, Route, Routes, useNavigate, useLocation } from 'react-router-dom'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
+import {
+  DashboardAppProvider,
+  DashboardAbortLayout,
+  DashboardPage,
+  PanelEditorPage,
+  VariablesPage,
+  DatasourceListPage,
+  DatasourceEditPage,
+} from '@/demo/DashboardDemo'
 import { ParseRefsTab } from './tabs/ParseRefsTab'
 import { InterpolateTab } from './tabs/InterpolateTab'
 import { FormatTab } from './tabs/FormatTab'
@@ -16,79 +28,162 @@ import { StreamingTab } from './tabs/StreamingTab'
 import { CacheTtlTab } from './tabs/CacheTtlTab'
 import { AnnotationsTab } from './tabs/AnnotationsTab'
 
-const TABS = [
-  { id: 'transforms', label: 'Transforms', content: <TransformsTab /> },
-  { id: 'csv-export', label: 'CSV Export', content: <CsvExportTab /> },
-  { id: 'streaming', label: 'Streaming', content: <StreamingTab /> },
-  { id: 'cache-ttl', label: 'Cache TTL', content: <CacheTtlTab /> },
-  { id: 'annotations', label: 'Annotations', content: <AnnotationsTab /> },
-  { id: 'navigation-lifecycle', label: 'Builder Lifecycle', content: <NavigationLifecycleTab /> },
-  { id: 'grafana-style', label: 'Operations Viewer', content: <GrafanaStyleTab /> },
-  { id: 'superset-style', label: 'Explore Cross-filter', content: <SupersetStyleTab /> },
-  { id: 'dashboard', label: 'Grid Basics', content: <DashboardDemoTab /> },
-  { id: 'authorization', label: 'Authorization', content: <AuthorizationTab /> },
-  { id: 'url-state', label: 'URL State', content: <UrlStateTab /> },
-  { id: 'parse-refs', label: 'parseRefs()', content: <ParseRefsTab /> },
-  { id: 'interpolate', label: 'interpolate()', content: <InterpolateTab /> },
-  { id: 'format', label: 'Format Specifiers', content: <FormatTab /> },
-  { id: 'dag', label: 'DAG', content: <DagTab /> },
-  { id: 'builtins', label: 'Built-ins', content: <BuiltinsTab /> },
-] as const
+// ── Navigation tree ────────────────────────────────────────────────────────────
 
-type TabId = (typeof TABS)[number]['id']
-
-function tabFromSearch(): TabId {
-  const tab = new URLSearchParams(window.location.search).get('tab')
-  return TABS.some((item) => item.id === tab) ? tab as TabId : 'transforms'
+interface NavItem {
+  id: string
+  label: string
+  path: string
 }
 
-export default function App() {
-  const [active, setActive] = useState<TabId>(() => tabFromSearch())
-  const current = TABS.find((t) => t.id === active)!
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
 
-  useEffect(() => {
-    const sync = () => setActive(tabFromSearch())
-    window.addEventListener('popstate', sync)
-    return () => window.removeEventListener('popstate', sync)
-  }, [])
+const NAV: NavGroup[] = [
+  {
+    label: 'Demo',
+    items: [
+      { id: 'full-dashboard',       label: 'Full Dashboard',       path: '/dashboard/sales' },
+      { id: 'grafana-style',        label: 'Operations Viewer',    path: '/playground/grafana-style' },
+      { id: 'superset-style',       label: 'Explore Cross-filter', path: '/playground/superset-style' },
+      { id: 'dashboard',            label: 'Grid Basics',          path: '/playground/dashboard' },
+    ],
+  },
+  {
+    label: 'Engine',
+    items: [
+      { id: 'transforms',           label: 'Transforms',           path: '/playground/transforms' },
+      { id: 'streaming',            label: 'Streaming',            path: '/playground/streaming' },
+      { id: 'cache-ttl',            label: 'Cache TTL',            path: '/playground/cache-ttl' },
+      { id: 'annotations',          label: 'Annotations',          path: '/playground/annotations' },
+      { id: 'authorization',        label: 'Authorization',        path: '/playground/authorization' },
+      { id: 'navigation-lifecycle', label: 'Builder Lifecycle',    path: '/playground/navigation-lifecycle' },
+    ],
+  },
+  {
+    label: 'Query & Variables',
+    items: [
+      { id: 'interpolate',          label: 'interpolate()',        path: '/playground/interpolate' },
+      { id: 'parse-refs',           label: 'parseRefs()',          path: '/playground/parse-refs' },
+      { id: 'format',               label: 'Format Specifiers',    path: '/playground/format' },
+      { id: 'builtins',             label: 'Built-ins',            path: '/playground/builtins' },
+      { id: 'url-state',            label: 'URL State',            path: '/playground/url-state' },
+      { id: 'csv-export',           label: 'CSV Export',           path: '/playground/csv-export' },
+    ],
+  },
+  {
+    label: 'Internals',
+    items: [
+      { id: 'dag',                  label: 'DAG',                  path: '/playground/dag' },
+    ],
+  },
+]
 
-  function selectTab(tab: TabId) {
-    setActive(tab)
-    const params = new URLSearchParams(window.location.search)
-    params.set('tab', tab)
-    const search = params.toString()
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${search}`)
-  }
+// ── Sidebar ────────────────────────────────────────────────────────────────────
+
+function Sidebar() {
+  const nav = useNavigate()
+  const { pathname } = useLocation()
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans">
-      {/* Header */}
-      <div className="border-b border-gray-200 px-8 py-3">
-        <h1 className="text-lg font-semibold">DashboardKit Playground</h1>
-        <p className="text-xs text-gray-400 mt-0.5">@loykin/dashboardkit</p>
+    <aside className="w-56 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <div className="px-5 py-4">
+        <p className="text-sm font-semibold tracking-tight">DashboardKit</p>
+        <p className="text-xs text-muted-foreground font-mono mt-0.5">@loykin/dashboardkit</p>
       </div>
-
-      {/* Tab bar */}
-      <div className="border-b border-gray-200 px-8">
-        <div className="flex gap-0 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => selectTab(tab.id)}
-              className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                active === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              {tab.label}
-            </button>
+      <Separator />
+      <ScrollArea className="flex-1">
+        <nav className="px-3 py-4 space-y-5">
+          {NAV.map((group) => (
+            <div key={group.label}>
+              <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const isActive = pathname === item.path || pathname.startsWith(item.path + '/')
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => nav(item.path)}
+                      className={cn(
+                        'w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors',
+                        isActive
+                          ? 'bg-accent text-accent-foreground font-medium'
+                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           ))}
-        </div>
-      </div>
+        </nav>
+      </ScrollArea>
+    </aside>
+  )
+}
 
-      {/* Content */}
-      <div className="px-8 py-6">{current.content}</div>
+// ── Shell — sidebar always visible ────────────────────────────────────────────
+
+function Shell() {
+  const { pathname } = useLocation()
+  const isDashboard = pathname.startsWith('/dashboard') || pathname.startsWith('/datasources')
+
+  return (
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+      <Sidebar />
+      <main className={cn('flex-1 min-w-0', isDashboard ? 'overflow-hidden' : 'overflow-auto px-8 py-6')}>
+        <Outlet />
+      </main>
     </div>
+  )
+}
+
+// ── App ────────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/playground/transforms" replace />} />
+
+      <Route element={<Shell />}>
+        {/* Dashboard section — no padding, fills content area */}
+        <Route element={<DashboardAppProvider />}>
+          <Route element={<DashboardAbortLayout />}>
+            <Route path="/dashboard/:dashboardId" element={<DashboardPage />} />
+            <Route path="/dashboard/:dashboardId/panels/:panelId/edit" element={<PanelEditorPage />} />
+            <Route path="/dashboard/:dashboardId/variables" element={<VariablesPage />} />
+          </Route>
+          <Route path="/datasources" element={<DatasourceListPage />} />
+          <Route path="/datasources/new" element={<DatasourceEditPage />} />
+          <Route path="/datasources/:uid/edit" element={<DatasourceEditPage />} />
+        </Route>
+
+        {/* Playground tabs — with padding */}
+        <Route path="/playground/grafana-style"        element={<GrafanaStyleTab />} />
+        <Route path="/playground/superset-style"       element={<SupersetStyleTab />} />
+        <Route path="/playground/dashboard"            element={<DashboardDemoTab />} />
+        <Route path="/playground/transforms"           element={<TransformsTab />} />
+        <Route path="/playground/streaming"            element={<StreamingTab />} />
+        <Route path="/playground/cache-ttl"            element={<CacheTtlTab />} />
+        <Route path="/playground/annotations"          element={<AnnotationsTab />} />
+        <Route path="/playground/authorization"        element={<AuthorizationTab />} />
+        <Route path="/playground/navigation-lifecycle" element={<NavigationLifecycleTab />} />
+        <Route path="/playground/interpolate"          element={<InterpolateTab />} />
+        <Route path="/playground/parse-refs"           element={<ParseRefsTab />} />
+        <Route path="/playground/format"               element={<FormatTab />} />
+        <Route path="/playground/builtins"             element={<BuiltinsTab />} />
+        <Route path="/playground/url-state"            element={<UrlStateTab />} />
+        <Route path="/playground/csv-export"           element={<CsvExportTab />} />
+        <Route path="/playground/dag"                  element={<DagTab />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/playground/transforms" replace />} />
+    </Routes>
   )
 }
