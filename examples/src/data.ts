@@ -98,6 +98,24 @@ export const salesDs = defineDatasource<SalesOptions>({
     return []
   },
 
+  editor: {
+    querySchema: {
+      by: {
+        type: 'select',
+        label: 'Group by',
+        description: 'Dimension to aggregate data by',
+        default: 'country',
+        choices: [
+          { label: 'Country',  value: 'country'  },
+          { label: 'Platform', value: 'platform' },
+          { label: 'Quarter',  value: 'quarter'  },
+          { label: 'Total',    value: 'total'    },
+          { label: 'Detail',   value: 'detail'   },
+        ],
+      },
+    },
+  },
+
   connector: {
     configSchema: {
       delayMs: {

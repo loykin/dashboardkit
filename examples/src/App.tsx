@@ -424,61 +424,176 @@ function DashboardPage() {
 
 // ── Route: /dashboards/:dashboardId/panels/:panelId/edit ──────────────────────
 
+interface QueryDraft {
+  id: string
+  uid: string
+  dsType: string
+  queryJson: string    // JSON string of request.query (optional)
+  optionsJson: string  // JSON string of request.options
+}
+
+function tryJson(v: unknown): string {
+  if (v === undefined || v === null) return ''
+  try { return JSON.stringify(v, null, 2) } catch { return '' }
+}
+
+function parseJson(s: string): unknown {
+  try { return JSON.parse(s) } catch { return undefined }
+}
+
+function QueryEditor({
+  draft, index, dsRecords, onChange, onRemove, canRemove,
+}: {
+  draft: QueryDraft
+  index: number
+  dsRecords: DsRecord[]
+  onChange(d: QueryDraft): void
+  onRemove(): void
+  canRemove: boolean
+}) {
+  const ds = dsRecords.find((r) => r.uid === draft.uid)
+  const plugin = DS_PLUGIN_TYPES[draft.dsType]
+  const querySchema = plugin?.editor?.querySchema
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginBottom: 10 }}>
+      {/* Query header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-alt, #f9f9f9)' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>#{index + 1}</span>
+        <select
+          className="ex-select"
+          style={{ flex: 1 }}
+          value={draft.uid}
+          onChange={(e) => {
+            const rec = dsRecords.find((r) => r.uid === e.target.value)
+            if (rec) onChange({ ...draft, uid: rec.uid, dsType: rec.type })
+          }}
+        >
+          {dsRecords.map((r) => (
+            <option key={r.uid} value={r.uid}>{r.name} ({r.type})</option>
+          ))}
+        </select>
+        {ds && <span className="badge badge-gray" style={{ fontSize: 10 }}>{ds.type}</span>}
+        {canRemove && (
+          <button className="btn btn-ghost btn-danger btn-icon" style={{ fontSize: 13 }} onClick={onRemove}>✕</button>
+        )}
+      </div>
+
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Query text (optional — for SQL/PromQL style datasources) */}
+        <div className="field">
+          <label className="field-label">Query <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — for text-based datasources)</span></label>
+          <textarea
+            className="ex-input"
+            style={{ fontFamily: 'monospace', fontSize: 12, minHeight: 56, resize: 'vertical' }}
+            placeholder={'e.g. SELECT * FROM sales WHERE country = \'$country\''}
+            value={draft.queryJson}
+            onChange={(e) => onChange({ ...draft, queryJson: e.target.value })}
+          />
+        </div>
+
+        {/* Options — SchemaForm if plugin has configSchema, else JSON textarea */}
+        <div className="field">
+          <label className="field-label">Options</label>
+          {querySchema && Object.keys(querySchema).length > 0 ? (
+            <SchemaForm
+              schema={querySchema}
+              value={(parseJson(draft.optionsJson) as Record<string, unknown>) ?? {}}
+              onChange={(v) => onChange({ ...draft, optionsJson: tryJson(v) })}
+            />
+          ) : (
+            <textarea
+              className="ex-input"
+              style={{ fontFamily: 'monospace', fontSize: 12, minHeight: 72, resize: 'vertical' }}
+              value={draft.optionsJson}
+              onChange={(e) => onChange({ ...draft, optionsJson: e.target.value })}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PanelEditorPage() {
   const { dashboardId, panelId: panelOriginId } = useParams<{ dashboardId: string; panelId: string }>()
   const nav = useNavigate()
-  const { engine } = useApp()
+  const { engine, dsRecords } = useApp()
   const back = useCallback(() => nav(`/dashboards/${dashboardId ?? 'sales'}`), [nav, dashboardId])
 
-  function getCurrentPanel() {
-    return engine.getConfig()?.panels.find((p) => p.id === panelOriginId) ?? null
+  const initPanel = engine.getConfig()?.panels.find((p) => p.id === panelOriginId) ?? null
+
+  function initDrafts(panel: typeof initPanel): QueryDraft[] {
+    if (!panel || panel.dataRequests.length === 0) {
+      const first = dsRecords[0]
+      return [{ id: 'q', uid: first?.uid ?? '', dsType: first?.type ?? '', queryJson: '', optionsJson: '{}' }]
+    }
+    return panel.dataRequests.map((r) => ({
+      id: r.id,
+      uid: r.uid,
+      dsType: r.type,
+      queryJson: r.query !== undefined ? tryJson(r.query) : '',
+      optionsJson: tryJson(r.options ?? {}),
+    }))
   }
-  function getInstanceId() {
-    return engine.getPanelInstances().find((p) => p.originId === panelOriginId)?.id ?? null
-  }
 
-  const initPanel = getCurrentPanel()
-  const [title, setTitle] = useState(initPanel?.title ?? '')
-  const [type,  setType]  = useState(initPanel?.type  ?? 'bar')
-  const [by,    setBy]    = useState(String(initPanel?.dataRequests[0]?.options.by ?? 'country'))
-
-  const titleRef = useRef(title); const typeRef = useRef(type); const byRef = useRef(by)
-  titleRef.current = title; typeRef.current = type; byRef.current = by
-
-  // previewData holds the already-transformed data — same shape the renderer sees on the dashboard
+  const [title,   setTitle]   = useState(initPanel?.title ?? '')
+  const [type,    setType]    = useState(initPanel?.type  ?? 'bar')
+  const [drafts,  setDrafts]  = useState<QueryDraft[]>(() => initDrafts(initPanel))
   const [previewData,   setPreviewData]   = useState<unknown | null>(null)
   const [previewStatus, setPreviewStatus] = useState<string>('Loading…')
   const [previewing,    setPreviewing]    = useState(false)
   const [busy,          setBusy]          = useState(false)
 
-  const buildPatch = useCallback(() => {
-    const req = getCurrentPanel()?.dataRequests[0]
-    return {
-      title: titleRef.current,
-      type:  typeRef.current,
-      dataRequests: req ? [{ ...req, options: { by: byRef.current } }] : [],
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // keep refs so callbacks don't go stale
+  const titleRef  = useRef(title);  titleRef.current  = title
+  const typeRef   = useRef(type);   typeRef.current   = type
+  const draftsRef = useRef(drafts); draftsRef.current = drafts
+
+  function buildDataRequests() {
+    return draftsRef.current
+      .filter((d) => d.uid)
+      .map((d) => {
+        const rec = dsRecords.find((r) => r.uid === d.uid)
+        const base = {
+          id: d.id || 'q',
+          uid: d.uid,
+          type: rec?.type ?? d.dsType,
+        }
+        const query   = d.queryJson.trim() ? parseJson(d.queryJson) as string | string[] | Record<string, unknown> | undefined : undefined
+        const options = (d.optionsJson.trim() ? parseJson(d.optionsJson) ?? {} : {}) as Record<string, unknown>
+        return { ...base, ...(query !== undefined ? { query } : {}), options }
+      })
+  }
+
+  function buildPatch() {
+    return { title: titleRef.current, type: typeRef.current, dataRequests: buildDataRequests() }
+  }
+
+  function getInstanceId() {
+    return engine.getPanelInstances().find((p) => p.originId === panelOriginId)?.id ?? null
+  }
 
   const runPreview = useCallback(async () => {
-    const instId = getInstanceId(); const currentPanel = getCurrentPanel()
+    const instId = getInstanceId()
+    const currentPanel = engine.getConfig()?.panels.find((p) => p.id === panelOriginId)
     if (!instId || !currentPanel) return
     setPreviewing(true); setPreviewStatus('Loading…')
     try {
-      // previewPanel already applies plugin.transform() — use `data`, not `rawData`
-      const { data, rawData } = await createEditorAddon(engine).previewPanel(instId, { ...currentPanel, ...buildPatch() })
+      const patch = buildPatch()
+      const { data, rawData } = await createEditorAddon(engine).previewPanel(instId, { ...currentPanel, ...patch })
       setPreviewData(data)
       setPreviewStatus(`${rawData[0]?.rows.length ?? 0} rows`)
     } catch (err) {
       setPreviewStatus(`Error: ${err instanceof Error ? err.message : String(err)}`)
       setPreviewData(null)
     } finally { setPreviewing(false) }
-  }, [buildPatch, engine]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, panelOriginId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const t = setTimeout(() => { void runPreview() }, 300)
+    const t = setTimeout(() => { void runPreview() }, 400)
     return () => clearTimeout(t)
-  }, [by, type, runPreview])
+  }, [type, drafts, runPreview])
 
   if (!initPanel) {
     return (
@@ -495,6 +610,14 @@ function PanelEditorPage() {
     setBusy(true)
     try { await engine.updatePanel(panelOriginId!, buildPatch()); back() }
     finally { setBusy(false) }
+  }
+
+  function addQuery() {
+    const first = dsRecords[0]
+    setDrafts((prev) => [
+      ...prev,
+      { id: `q${prev.length + 1}`, uid: first?.uid ?? '', dsType: first?.type ?? '', queryJson: '', optionsJson: '{}' },
+    ])
   }
 
   const previewRows = Array.isArray(previewData) && Array.isArray((previewData as unknown[][])[0])
@@ -515,52 +638,78 @@ function PanelEditorPage() {
       </div>
 
       <div className="editor-body">
-        {/* Left: preview pane */}
-        <div className="editor-preview">
-          <div style={{ marginBottom: 10, fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Preview — {previewStatus}
-          </div>
-          <div className="panel" style={{ minHeight: 280 }}>
-            <div className="panel-header">
-              <span className="panel-title">{title}</span>
-              <span className="badge badge-gray">{type}</span>
+        {/* Left col: preview (top) + query editor (bottom) */}
+        <div className="editor-left">
+          {/* Preview */}
+          <div className="editor-preview">
+            <div style={{ marginBottom: 10, fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Preview — {previewStatus}
             </div>
-            <div style={{ padding: '10px 12px', overflowY: 'auto', maxHeight: 400 }}>
-              {previewData === null ? (
-                <div className="panel-loading">Loading…</div>
-              ) : type === 'stat' ? (
-                <StatPreview row={previewData as unknown[]} />
-              ) : !previewRows || previewRows.length === 0 ? (
-                <div className="panel-loading">No data returned</div>
-              ) : type === 'bar' ? (
-                (() => {
-                  const max = Math.max(1, ...previewRows.map((r) => Number(r[1] ?? 0)))
-                  return previewRows.map((row) => {
-                    const val = Number(row[1] ?? 0)
-                    return (
-                      <div key={String(row[0])} className="bar-row">
-                        <span className="bar-label">{String(row[0])}</span>
-                        <div className="bar-track"><div className="bar-fill" style={{ width: `${(val / max) * 100}%` }} /></div>
-                        <span className="bar-val">{val.toLocaleString()}</span>
-                      </div>
-                    )
-                  })
-                })()
-              ) : (
-                <table className="ex-table">
-                  <thead><tr>{Array.from({ length: cols }, (_, i) => <th key={i}>col {i + 1}</th>)}</tr></thead>
-                  <tbody>
-                    {previewRows.map((row, i) => (
-                      <tr key={i}>{row.map((cell, j) => <td key={j}>{String(cell)}</td>)}</tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+            <div className="panel">
+              <div className="panel-header">
+                <span className="panel-title">{title}</span>
+                <span className="badge badge-gray">{type}</span>
+              </div>
+              <div style={{ padding: '10px 12px', overflowY: 'auto', maxHeight: 340 }}>
+                {previewData === null ? (
+                  <div className="panel-loading">Loading…</div>
+                ) : type === 'stat' ? (
+                  <StatPreview row={previewData as unknown[]} />
+                ) : !previewRows || previewRows.length === 0 ? (
+                  <div className="panel-loading">No data returned</div>
+                ) : type === 'bar' ? (
+                  (() => {
+                    const max = Math.max(1, ...previewRows.map((r) => Number(r[1] ?? 0)))
+                    return previewRows.map((row) => {
+                      const val = Number(row[1] ?? 0)
+                      return (
+                        <div key={String(row[0])} className="bar-row">
+                          <span className="bar-label">{String(row[0])}</span>
+                          <div className="bar-track"><div className="bar-fill" style={{ width: `${(val / max) * 100}%` }} /></div>
+                          <span className="bar-val">{val.toLocaleString()}</span>
+                        </div>
+                      )
+                    })
+                  })()
+                ) : (
+                  <table className="ex-table">
+                    <thead><tr>{Array.from({ length: cols }, (_, i) => <th key={i}>col {i + 1}</th>)}</tr></thead>
+                    <tbody>
+                      {previewRows.map((row, i) => (
+                        <tr key={i}>{row.map((cell, j) => <td key={j}>{String(cell)}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Query editor */}
+          <div className="editor-query">
+            <div className="editor-query-header">
+              <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Query</span>
+              <button className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 8px' }} onClick={addQuery}>
+                + Add query
+              </button>
+            </div>
+            <div className="editor-query-body">
+              {drafts.map((draft, i) => (
+                <QueryEditor
+                  key={draft.id + i}
+                  draft={draft}
+                  index={i}
+                  dsRecords={dsRecords}
+                  onChange={(d) => setDrafts((prev) => prev.map((x, xi) => xi === i ? d : x))}
+                  onRemove={() => setDrafts((prev) => prev.filter((_, xi) => xi !== i))}
+                  canRemove={drafts.length > 1}
+                />
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Right: settings form */}
+        {/* Right col: panel options */}
         <div className="editor-form">
           <div className="editor-form-section">
             <div className="drawer-section-title">Panel</div>
@@ -573,27 +722,6 @@ function PanelEditorPage() {
               <select className="ex-select" value={type} onChange={(e) => setType(e.target.value)}>
                 {PANEL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-            </div>
-          </div>
-
-          <div className="editor-form-section">
-            <div className="drawer-section-title">Query — Sales DB</div>
-            <div className="field">
-              <label className="field-label">Group by</label>
-              <select className="ex-select" value={by} onChange={(e) => setBy(e.target.value)}>
-                <option value="country">Country</option>
-                <option value="platform">Platform</option>
-                <option value="quarter">Quarter</option>
-                <option value="total">Total (stat)</option>
-                <option value="detail">Detail (table)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="editor-form-section">
-            <div className="info-box">
-              <strong>Preview</strong> fetches data without committing.{' '}
-              <strong>Apply</strong> updates the dashboard panel.
             </div>
           </div>
 

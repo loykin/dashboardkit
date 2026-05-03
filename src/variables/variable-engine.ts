@@ -20,7 +20,7 @@ import { createDatasourceRegistry } from '../datasources'
 export const ALL_OPTION_VALUE = '$__all'
 
 export interface VariableEngineOptions {
-  variableTypes: VariableTypePluginDef[]
+  variableTypes: ReadonlyArray<VariableTypePluginDef>
   datasourcePlugins: DatasourcePluginDef[]
   stateStore: DashboardStateStore
   getAuthContext: () => AuthContext
