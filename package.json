@@ -1,6 +1,6 @@
 {
   "name": "@loykin/dashboardkit",
-  "version": "0.0.1",
+  "version": "0.0.0-dev",
   "description": "Headless dashboard orchestration engine — pure TypeScript, no React dependency",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -102,7 +102,7 @@
     "type": "git",
     "url": "https://github.com/loykin/dashboardkit.git"
   },
-  "homepage": "https://loykin.github.io/dashboardkit/",
+  "homepage": "https://loykin.github.io/dashboardkit/playground",
   "bugs": {
     "url": "https://github.com/loykin/dashboardkit/issues"
   },
