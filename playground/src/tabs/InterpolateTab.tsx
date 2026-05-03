@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { interpolate } from '@loykin/dashboardkit'
-import type { InterpolateContext } from '@loykin/dashboardkit'
+import type { InterpolateContext, VariableFormatter } from '@loykin/dashboardkit'
 
 const INITIAL_TEMPLATE =
   "SELECT * FROM sales\nWHERE country = '$country'\n  AND city IN (${city:sqlin})\n  AND $__timeFilter(created_at)"
@@ -36,9 +36,29 @@ export function InterpolateTab() {
   const variables = tryParseJson(variablesJson) as Record<string, string | string[]>
   const builtins = tryParseJson(builtinsJson) as Record<string, string>
 
+  const [customFormatName, setCustomFormatName] = useState('pg_literal')
+  const [customFormatBody, setCustomFormatBody] = useState(
+    "(val) => Array.isArray(val) ? val.map(v => `'${v}'`).join(', ') : `'${val}'`",
+  )
+  const [customFormatErr, setCustomFormatErr] = useState<string | null>(null)
+
+  let customFormatters: Record<string, VariableFormatter> = {}
+  try {
+    if (customFormatName.trim() && customFormatBody.trim()) {
+      // eslint-disable-next-line no-new-func
+      const fn = new Function(`return (${customFormatBody})`)() as VariableFormatter
+      customFormatters = { [customFormatName.trim()]: fn }
+      if (customFormatErr) setCustomFormatErr(null)
+    }
+  } catch (e) {
+    customFormatters = {}
+    if (!customFormatErr) setCustomFormatErr(String(e))
+  }
+
   const ctx: InterpolateContext = {
     variables,
     builtins,
+    formatters: customFormatters,
     functions: {
       timeFilter: {
         name: 'timeFilter',
@@ -118,6 +138,32 @@ export function InterpolateTab() {
               onChange={(e) => setTimeFilterSql(e.target.value)}
             />
             <p className="text-[10px] text-gray-400 mt-1">:from / :to 는 builtins.fromISO / toISO 로 치환됨</p>
+          </div>
+
+          <div className="rounded border border-dashed border-gray-300 p-3 space-y-2">
+            <p className="text-xs font-semibold text-gray-600">Custom formatter</p>
+            <div className="flex gap-2">
+              <div className="flex-none w-28">
+                <label className="block text-[10px] text-gray-500 mb-1">Format name</label>
+                <input
+                  className="w-full font-mono text-xs bg-gray-50 border border-gray-200 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  value={customFormatName}
+                  onChange={(e) => setCustomFormatName(e.target.value)}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] text-gray-500 mb-1">Function <code>(val, varName) =&gt; string</code></label>
+                <input
+                  className={`w-full font-mono text-xs bg-gray-50 border rounded p-1.5 focus:outline-none focus:ring-2 ${customFormatErr ? 'border-red-300 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-300'}`}
+                  value={customFormatBody}
+                  onChange={(e) => { setCustomFormatBody(e.target.value); setCustomFormatErr(null) }}
+                />
+              </div>
+            </div>
+            {customFormatErr && <p className="text-[10px] text-red-500">{customFormatErr}</p>}
+            <p className="text-[10px] text-gray-400">
+              Template에서 <code className="bg-gray-100 px-1 rounded">{'${var:' + customFormatName + '}'}</code> 로 사용
+            </p>
           </div>
         </div>
 

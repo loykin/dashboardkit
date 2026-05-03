@@ -83,7 +83,7 @@ export function defineVariableType<TOptions = Record<string, unknown>>(
 export interface CreateDashboardEngineOptions {
   panels?: PanelPluginDef[]
   datasourcePlugins?: DatasourcePluginDef[]
-  variableTypes?: VariableTypePluginDef[]
+  variableTypes?: ReadonlyArray<VariableTypePluginDef>
   panelExpanders?: PanelExpander[]
   stateStore?: DashboardStateStore
   authContext?: AuthContext
@@ -176,6 +176,14 @@ export interface CoreEngineAPI {
 
   // Subscribe (returns unsubscribe function)
   subscribe(listener: (event: import('./types').EngineEvent) => void): () => void
+
+  // Abort all in-flight panel requests without tearing down the engine.
+  // Call this when the dashboard view unmounts but the engine instance is reused.
+  abortAll(): void
+
+  // Abort all in-flight panel requests and unsubscribe from the state store.
+  // Call this when the engine instance itself is no longer needed.
+  destroy(): void
 
   // Runtime registration — add plugins after engine creation
   registerPanel(def: PanelPluginDef): void

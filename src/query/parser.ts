@@ -89,10 +89,13 @@ export function parseRefs(template: string): ParseResult {
 
 // ─── Interpolator ───────────────────────────────────────────────────────────────
 
+export type VariableFormatter = (value: string | string[], varName: string) => string
+
 export interface InterpolateContext {
   variables: Record<string, string | string[]> // user-defined variables
   builtins: Record<string, string> // built-in variables ($__from, etc.)
   functions: Record<string, BuiltinFunction> // built-in functions ($__timeFilter, etc.)
+  formatters?: Record<string, VariableFormatter> // custom format specifiers
 }
 
 /**
@@ -117,7 +120,8 @@ export function interpolate(template: string, ctx: InterpolateContext): string {
       if (val === undefined || val === null) {
         replacement = ''
       } else if (token.format) {
-        replacement = applyFormat(val, token.format, token.name)
+        const custom = ctx.formatters?.[token.format]
+        replacement = custom ? custom(val, token.name) : applyFormat(val, token.format, token.name)
       } else {
         replacement = Array.isArray(val) ? val.join(',') : val
       }
@@ -157,8 +161,9 @@ export function interpolateVariables(
   template: string,
   variables: Record<string, string | string[]>,
   builtins: Record<string, string> = {},
+  formatters: Record<string, VariableFormatter> = {},
 ): string {
-  return interpolate(template, { variables, builtins, functions: {} })
+  return interpolate(template, { variables, builtins, functions: {}, formatters })
 }
 
 // ─── Format Specifiers ──────────────────────────────────────────────────────────

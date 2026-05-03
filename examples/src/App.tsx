@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import {
   builtinVariableTypes,
   createCrossFilterAddon,
@@ -112,13 +112,27 @@ function StatPreview({ row }: { row: unknown[] }) {
   )
 }
 
+function PanelLoadingOverlay({ loading }: { loading: boolean }) {
+  if (!loading) return null
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, background: 'rgba(var(--bg-rgb, 255,255,255), 0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none', zIndex: 1,
+    }}>
+      <div className="panel-loading" style={{ background: 'none' }}>Loading…</div>
+    </div>
+  )
+}
+
 function StatContent({ panelId, engine }: { panelId: string; engine: CoreEngineAPI }) {
   const { data, loading, error } = usePanel<unknown[] | null>(engine, panelId)
-  if (loading) return <div className="panel-loading">Loading…</div>
-  if (error)   return <div className="panel-error">{error}</div>
-  if (!data)   return <div className="panel-loading">No data</div>
+  if (error)        return <div className="panel-error">{error}</div>
+  if (!data && loading) return <div className="panel-loading">Loading…</div>
+  if (!data)        return <div className="panel-loading">No data</div>
   return (
-    <div style={{ padding: '12px 14px' }}>
+    <div style={{ position: 'relative', padding: '12px 14px' }}>
+      <PanelLoadingOverlay loading={loading} />
       <StatPreview row={data} />
     </div>
   )
@@ -129,14 +143,15 @@ function BarContent({ panelId, engine, dimension }: { panelId: string; engine: C
   const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
   const [scopes, setScopes] = useState(() => cf.getPanelSelections())
   useEngineEvent(engine, (e) => { if (e.type === 'panel-selection-changed') setScopes(cf.getPanelSelections()) })
-  if (loading) return <div className="panel-loading">Loading…</div>
-  if (error)   return <div className="panel-error">{error}</div>
+  if (error)                      return <div className="panel-error">{error}</div>
+  if (!data && loading)           return <div className="panel-loading">Loading…</div>
   const rows = Array.isArray(data) ? data : []
   const max  = Math.max(1, ...rows.map((r) => Number(r[1] ?? 0)))
   const activeScope = dimension ? Object.values(scopes).find((s) => dimension in s) : undefined
   const activeVal   = activeScope ? String(activeScope[dimension!]) : null
   return (
-    <div style={{ padding: '8px 12px', overflowY: 'auto', height: '100%' }}>
+    <div style={{ position: 'relative', padding: '8px 12px', overflowY: 'auto', height: '100%' }}>
+      <PanelLoadingOverlay loading={loading} />
       {rows.map((row) => {
         const label = String(row[0]); const val = Number(row[1] ?? 0)
         const isActive = activeVal === label; const isFaded = !!activeVal && !isActive
@@ -161,15 +176,16 @@ function BarContent({ panelId, engine, dimension }: { panelId: string; engine: C
 
 function TableContent({ panelId, engine }: { panelId: string; engine: CoreEngineAPI }) {
   const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
-  if (loading) return <div className="panel-loading">Loading…</div>
-  if (error)   return <div className="panel-error">{error}</div>
+  if (error)              return <div className="panel-error">{error}</div>
+  if (!data && loading)   return <div className="panel-loading">Loading…</div>
   const rows = Array.isArray(data) ? data : []
-  if (rows.length === 0) return <div className="panel-loading">No data</div>
+  if (rows.length === 0)  return <div className="panel-loading">No data</div>
   const headers = rows[0]?.length === 4
     ? ['Country', 'Platform', 'Quarter', 'Revenue']
     : ['Dimension', 'Value']
   return (
-    <div style={{ overflowY: 'auto', height: '100%' }}>
+    <div style={{ position: 'relative', overflowY: 'auto', height: '100%' }}>
+      <PanelLoadingOverlay loading={loading} />
       <table className="ex-table">
         <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
         <tbody>
@@ -332,6 +348,15 @@ function SchemaForm({
       ))}
     </div>
   )
+}
+
+// ── Dashboard layout — wraps all /dashboards/* routes ─────────────────────────
+// Aborts pending panel queries when the user leaves the dashboard section entirely.
+
+function DashboardLayout() {
+  const { engine } = useApp()
+  useEffect(() => () => engine.abortAll(), [engine])
+  return <Outlet />
 }
 
 // ── Route: /dashboards/:dashboardId ───────────────────────────────────────────
@@ -919,6 +944,8 @@ export function App() {
   // Keeps engine in sync if INITIAL_DASHBOARD reference ever changes (no-op here).
   useLoadDashboard(engine, INITIAL_DASHBOARD)
 
+  useEffect(() => () => engine.destroy(), [engine])
+
   const ctx = useMemo<AppCtx>(
     () => ({ engine, stateStore, dsRecords, setDsRecords }),
     [engine, stateStore, dsRecords],
@@ -929,9 +956,11 @@ export function App() {
       <div className="app">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboards/sales" replace />} />
-          <Route path="/dashboards/:dashboardId" element={<DashboardPage />} />
-          <Route path="/dashboards/:dashboardId/panels/:panelId/edit" element={<PanelEditorPage />} />
-          <Route path="/dashboards/:dashboardId/variables" element={<VariablesPage />} />
+          <Route element={<DashboardLayout />}>
+            <Route path="/dashboards/:dashboardId" element={<DashboardPage />} />
+            <Route path="/dashboards/:dashboardId/panels/:panelId/edit" element={<PanelEditorPage />} />
+            <Route path="/dashboards/:dashboardId/variables" element={<VariablesPage />} />
+          </Route>
           <Route path="/datasources" element={<DatasourceListPage />} />
           <Route path="/datasources/new" element={<DatasourceEditPage />} />
           <Route path="/datasources/:uid/edit" element={<DatasourceEditPage />} />

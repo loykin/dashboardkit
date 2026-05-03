@@ -1400,18 +1400,28 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     registerTransform(def) {
       transformRegistry.set(def.type, def)
     },
+
+    abortAll() {
+      abortPanelRequests()
+    },
+
+    destroy() {
+      abortPanelRequests()
+      listeners.clear()
+      unsubscribeStateStore()
+    },
   }
 
+  const unsubscribeStateStore = stateStore.subscribe((snapshot) => {
+    if (suppressDashboardSnapshotEvents) {
+      lastDashboardSnapshot = snapshot
+      mirrorDashboardSnapshot(snapshot)
+      return
+    }
+    void handleDashboardSnapshotChange(snapshot)
+  })
+
   ;(api as CoreEngineAPI & { _store: StoreApi<EngineStore> })._store = store
-  ;(api as CoreEngineAPI & { _unsubscribeStateStore: () => void })._unsubscribeStateStore =
-    stateStore.subscribe((snapshot) => {
-      if (suppressDashboardSnapshotEvents) {
-        lastDashboardSnapshot = snapshot
-        mirrorDashboardSnapshot(snapshot)
-        return
-      }
-      void handleDashboardSnapshotChange(snapshot)
-    })
 
   return api
 }
