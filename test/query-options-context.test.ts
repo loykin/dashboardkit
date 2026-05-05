@@ -7,7 +7,7 @@ import {
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
-import type { DashboardInput, QueryOptions } from '@loykin/dashboardkit'
+import type { DashboardInput, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -50,7 +50,7 @@ function config(): DashboardInput {
 }
 
 test('datasource query options include runtime panel context and builtins', async () => {
-  const seen: QueryOptions[] = []
+  const seen: DashboardDatasourceQueryContext[] = []
   const engine = createDashboardEngine({
     panels: [panel],
     variableTypes: [listType],
@@ -58,7 +58,7 @@ test('datasource query options include runtime panel context and builtins', asyn
       defineDatasource({
         uid: 'ds',
         type: 'mock',
-        async query(options) {
+        async queryData(_request, options) {
           seen.push(options)
           return { columns: [], rows: [] }
         },

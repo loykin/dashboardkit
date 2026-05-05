@@ -66,18 +66,14 @@ export const queryVariableType = defineVariableType({
     if (!request?.query || typeof request.query !== 'string') return []
 
     if (ctx.queryVariableOptions) return ctx.queryVariableOptions(request)
-
-    const datasource = ctx.datasourcePlugins[request.uid]
-    if (!datasource?.metricFindQuery) return []
-
-    return datasource.metricFindQuery(request.query, ctx.variables)
+    return []
   },
 })
 
 // ─── Datetime Variable ────────────────────────────────────────────────────────
 // Encodes a time range as "from|to" (e.g. "now-1h|now").
 // Use engine.setTimeRange() or engine.setVariable(name, "now-6h|now") to update.
-// Panels that use a datetime variable will receive it as QueryOptions.timeRange.
+// Panels that use a datetime variable will receive it as query context timeRange.
 
 export const datetimeVariableType = defineVariableType({
   id: 'datetime',

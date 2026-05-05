@@ -79,7 +79,7 @@ export function UrlStateTab() {
     const datasource = defineDatasource({
       uid: 'url-state-backend',
       type: 'backend',
-      async query({ variables, timeRange }) {
+      async queryData(_request, {  variables, timeRange  }) {
         setLastQueryVars(variables)
         return {
           columns: [

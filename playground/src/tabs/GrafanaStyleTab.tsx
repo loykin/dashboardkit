@@ -8,7 +8,7 @@ import {
   defineVariableType,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, DashboardStateStore, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, DashboardStateStore, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 interface SeriesRow {
@@ -56,7 +56,7 @@ const optionVariable = defineVariableType({
   },
 })
 
-function sampleRows(options: QueryOptions): SeriesRow[] {
+function sampleRows(options: DashboardDatasourceQueryContext): SeriesRow[] {
   const env = String(options.variables.env ?? 'prod')
   const hostValue = options.variables.host
   const host = Array.isArray(hostValue) ? hostValue.join(', ') : String(hostValue ?? 'api-1')
@@ -71,7 +71,7 @@ function sampleRows(options: QueryOptions): SeriesRow[] {
 const datasource = defineDatasource({
   uid: 'metrics',
   type: 'metrics',
-  async query(options) {
+  async queryData(_request, options) {
     const rows = sampleRows(options)
     return {
       columns: [

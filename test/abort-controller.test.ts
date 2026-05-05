@@ -51,7 +51,7 @@ test('datasource receives AbortSignal on each query call', async () => {
   const ds = defineDatasource({
     uid: 'ds1',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       signals.push(opts.signal)
       queryEntered()
       return { columns: [], rows: [] }
@@ -83,7 +83,7 @@ test('previous panel request is aborted when a newer request starts', async () =
   const ds = defineDatasource({
     uid: 'ds1',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCount += 1
       if (queryCount === 1) {
         initialQueryEntered()
@@ -110,7 +110,7 @@ test('previous panel request is aborted when a newer request starts', async () =
   await nextTick()
 
   const first = engine.refreshPanel('p1')
-  // Wait until the first request has actually entered dsDef.query (and set firstSignal)
+  // Wait until the first request has actually entered queryData (and set firstSignal)
   await firstQueryReached
   // Now start the second request — this aborts the first controller
   const second = engine.refreshPanel('p1')
@@ -135,7 +135,7 @@ test('load() aborts pending panel requests before replacing dashboard state', as
   const ds = defineDatasource({
     uid: 'ds1',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCount += 1
       capturedSignal = opts.signal
       if (queryCount > 1) return { columns: [], rows: [] }

@@ -717,9 +717,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
       }
       assertCurrentPanelRequest(panelId, controller)
 
-      // Use streaming when the first active request's datasource supports subscribe()
+      // Use streaming when the first active request's datasource supports subscribeData().
       const firstDs = datasourceRegistry.tryGetForRequest(activeRequests[0]!)
-      if (firstDs?.subscribe) {
+      if (firstDs?.subscribeData) {
         startPanelStream(panelId, cfg, instance, activeRequests, variables, tr)
         return
       }

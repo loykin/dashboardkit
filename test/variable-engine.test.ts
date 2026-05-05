@@ -12,7 +12,7 @@ import type { DashboardConfig } from '@loykin/dashboardkit'
 const datasource = defineDatasource({
   uid: 'backend',
   type: 'backend',
-  async query() {
+  async queryData() {
     return { columns: [], rows: [] }
   },
 })

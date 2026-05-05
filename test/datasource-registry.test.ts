@@ -15,7 +15,7 @@ import type { DashboardInput } from '@loykin/dashboardkit'
 const datasource = defineDatasource({
   uid: 'backend',
   type: 'mock',
-  async query() {
+  async queryData() {
     return { columns: [], rows: [] }
   },
 })
@@ -24,7 +24,7 @@ const datasourceWithCapabilities = defineDatasource({
   uid: 'backend-with-capabilities',
   type: 'mock',
   optionsSchema: {},
-  async query() {
+  async queryData() {
     return { columns: [], rows: [] }
   },
   variable: {

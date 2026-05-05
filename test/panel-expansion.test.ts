@@ -10,7 +10,7 @@ import {
 import type {
   DashboardInput,
   PanelExpander,
-  QueryOptions,
+  DashboardDatasourceQueryContext,
 } from '@loykin/dashboardkit'
 
 const panel = definePanel({
@@ -74,7 +74,7 @@ test('repeat expands one panel config into runtime panel instances', async () =>
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
         },
       }),
@@ -102,13 +102,13 @@ test('repeat expands one panel config into runtime panel instances', async () =>
 })
 
 test('refreshPanel executes a repeat instance with its scoped variable value', async () => {
-  const queryOptions: QueryOptions[] = []
+  const queryOptions: DashboardDatasourceQueryContext[] = []
   const engine = createDashboardEngine({
     datasourcePlugins: [
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           queryOptions.push(options)
           return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
         },
@@ -142,7 +142,7 @@ test('custom panel expanders can filter runtime instances after repeat expansion
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
         },
       }),

@@ -15,8 +15,9 @@ a database, manage datasource credentials, or dictate your UI design.
 - **Config CRUD**: add/remove panels, add/update/remove variables, update
   dashboard metadata, then save with `getConfig()`
 - **Plugin model**: datasource, panel, and variable type plugins
-- **Structured requests**: panel queries use `dataRequests[]` with datasource
-  identity, query descriptor, request options, permissions, and hide state
+- **Optional structured requests**: panels can omit datasources entirely, or use
+  `dataRequests[]` with datasource identity, query descriptor, request options,
+  permissions, and hide state
 - **Variable engine**: dependency DAG, downstream refresh, include-all, sorting,
   readiness checks, and time-range refresh support
 - **URL-safe state model**: variables, time range, and refresh can come from URL
@@ -96,7 +97,7 @@ import {
 const myDatasource = defineDatasource({
   uid: 'main-api',
   type: 'backend',
-  async query({ query, variables, timeRange, datasourceOptions }) {
+  async queryData(_request, {  query, variables, timeRange, datasourceOptions  }) {
     const res = await fetch('/api/query', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -229,6 +230,10 @@ engine is orchestrating panel queries. Use `@loykin/datasourcekit` directly for
 dashboard-independent alert, report, schema browser, query preview, or backend
 job execution.
 
+Datasources are optional. A dashboard can render static, derived, embedded, or
+app-owned panels without registering any datasource plugin as long as those
+panels do not declare `dataRequests[]`.
+
 ```ts
 import { defineDatasource } from '@loykin/dashboardkit'
 
@@ -238,27 +243,30 @@ const datasource = defineDatasource<MyOptions, MyQuery>({
   options: { baseUrl: '/api' },
   cacheTtlMs: 30_000, // optional default cache TTL
 
-  async query({ query, variables, timeRange, datasourceOptions, dataRequest }) {
+  async queryData(request, context) {
     // DashboardKit does NOT interpolate queries — the datasource decides how
     // to use the raw query descriptor + resolved variables.
+    const { variables, timeRange, datasourceOptions } = context
     return {
       columns: [{ name: 'ts', type: 'time' }, { name: 'value', type: 'number' }],
       rows: [[1704067200000, 42]],
     }
   },
 
-  // Optional: streaming alternative to query()
-  subscribe(options, onData, onError) {
-    const ws = openWebSocket(options)
+  // Optional: streaming alternative to queryData()
+  subscribeData(request, context, onData, onError) {
+    const ws = openWebSocket(request, context)
     ws.onmessage = (e) => onData(JSON.parse(e.data))
     ws.onerror = (e) => onError(new Error(String(e)))
     return () => ws.close() // must return unsubscribe function
   },
 
   // Optional: used by `query`-type variables
-  async metricFindQuery(query, variables) {
-    const items = await fetch(`/api/lookup?q=${query}`).then((r) => r.json())
-    return items.map((v: string) => ({ label: v, value: v }))
+  variable: {
+    async metricFindQuery(query, context) {
+      const items = await fetch(`/api/lookup?q=${query}`).then((r) => r.json())
+      return items.map((v: string) => ({ label: v, value: v }))
+    },
   },
 })
 ```
@@ -297,19 +305,25 @@ const result = await executor.query(
 )
 ```
 
-`query()` receives:
+`queryData()` receives:
 
 ```ts
-interface QueryOptions<TOptions> {
-  dashboardId: string
-  panelId: string
-  requestId: string
-  query: unknown           // dataRequest.query (raw)
+interface DataQuery<TQuery> {
+  id: string
+  datasourceUid: string
+  datasourceType?: string
+  query?: TQuery           // dataRequest.query (raw)
+  options?: Record<string, unknown>
+}
+
+interface DashboardDatasourceQueryContext<TOptions> {
   variables: Record<string, string | string[]>
   timeRange?: { from: string; to: string }
   datasourceOptions: TOptions
-  dataRequest: DataRequestConfig
   signal?: AbortSignal
+  dashboardId: string
+  panelId: string
+  requestId: string
 }
 ```
 
@@ -372,7 +386,7 @@ Built-in types:
 
 | `type` | Description |
 |---|---|
-| `query` | Calls `datasource.metricFindQuery(query, vars)` and populates options from the result |
+| `query` | Calls `datasource.variable.metricFindQuery(query, ctx)` and populates options from the result |
 | `custom` | Comma-separated static values. `options.values = 'KR,US,JP'` |
 | `textbox` | Free-text input with `defaultValue` |
 | `constant` | Fixed hidden value |
@@ -600,7 +614,7 @@ engine.subscribe(listener)     // → unsubscribe function
 ## Query Interpolation
 
 `interpolate()` is a standalone utility — it is not called automatically by the
-engine. Use it inside a datasource `query()` when you want template-style variable
+engine. Use it inside a datasource `queryData()` when you want template-style variable
 substitution.
 
 ```ts
@@ -609,12 +623,12 @@ import { interpolate } from '@loykin/dashboardkit'
 const datasource = defineDatasource({
   uid: 'postgres',
   type: 'postgres',
-  async query({ query, variables, timeRange }) {
-    const sql = interpolate(String(query), {
-      variables,
+  async queryData(request, context) {
+    const sql = interpolate(String(request.query), {
+      variables: context.variables,
       builtins: {
-        from: String(timeRange?.from ?? ''),
-        to:   String(timeRange?.to   ?? ''),
+        from: String(context.timeRange?.from ?? ''),
+        to:   String(context.timeRange?.to   ?? ''),
       },
       functions: {},
       formatters: {

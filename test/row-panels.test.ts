@@ -69,7 +69,7 @@ test('expanding a row triggers queries for newly visible child panels', async ()
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query() {
+    async queryData() {
       queryCalls += 1
       return { columns: [], rows: [] }
     },
@@ -116,7 +116,7 @@ test('collapsing a row aborts in-flight requests for child panels', async () => 
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    query(options) {
+    queryData(_request, options) {
       started = true
       return new Promise<QueryResult>((_resolve, reject) => {
         if (options.signal?.aborted) {

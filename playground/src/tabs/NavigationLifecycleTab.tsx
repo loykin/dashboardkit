@@ -14,7 +14,7 @@ import {
   usePanelDraftEditor,
   useVariable,
 } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 type DashboardKey = 'ops' | 'billing'
@@ -58,7 +58,7 @@ const staticVariable = defineVariableType({
 const datasource = defineDatasource({
   uid: 'lifecycle-api',
   type: 'backend',
-  async query(options) {
+  async queryData(_request, options) {
     if (String(options.query ?? '').startsWith('builder.custom')) {
       const team = String(options.variables.team ?? '-')
       const rawQuery = String(options.query ?? '')
@@ -99,7 +99,7 @@ const datasource = defineDatasource({
   },
 })
 
-function buildRows(options: QueryOptions): unknown[][] {
+function buildRows(options: DashboardDatasourceQueryContext): unknown[][] {
   const dashboard = options.dashboardId
   const seed = dashboard === 'ops-dashboard' ? 40 : 90
   const region = String(options.variables.region ?? '-')

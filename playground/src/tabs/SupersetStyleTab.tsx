@@ -7,7 +7,7 @@ import {
   definePanel,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 const salesRows = [
@@ -40,7 +40,7 @@ const tablePanel = definePanel({
   },
 })
 
-function filteredRows(options: QueryOptions) {
+function filteredRows(options: DashboardDatasourceQueryContext) {
   return salesRows.filter(([country, segment]) => {
     if (options.variables.country && options.variables.country !== country) return false
     return !(options.variables.segment && options.variables.segment !== segment);
@@ -51,7 +51,7 @@ function filteredRows(options: QueryOptions) {
 const datasource = defineDatasource({
   uid: 'sales',
   type: 'sales',
-  async query(options) {
+  async queryData(_request, options) {
     const rows = filteredRows(options)
     const dimension = String((options.dataRequest.options.dimension ?? 'country'))
     if (dimension === 'segment') {

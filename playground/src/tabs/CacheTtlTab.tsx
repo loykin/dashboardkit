@@ -11,7 +11,7 @@ const ds = defineDatasource({
   uid: 'slow-api',
   type: 'slow',
   cacheTtlMs: 3000,
-  async query() {
+  async queryData() {
     invokeCount++
     lastResult = [
       ['cpu', Math.round(Math.random() * 100)],

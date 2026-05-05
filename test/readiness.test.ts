@@ -133,7 +133,7 @@ test('core exposes panel dependency and readiness for runtime instances', async 
       defineDatasource({
         uid: 'ds',
         type: 'mock',
-        async query() {
+        async queryData() {
           return { columns: [], rows: [] }
         },
       }),

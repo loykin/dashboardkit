@@ -9,15 +9,20 @@ import {
   defineVariableType,
   createMemoryDashboardStateStore,
 } from '@loykin/dashboardkit'
-import type { DashboardInput, QueryOptions, QueryResult } from '@loykin/dashboardkit'
+import type {
+  DashboardInput,
+  DashboardDatasourceQueryContext,
+  DataQuery,
+  QueryResult,
+} from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
-function makeDs(uid: string, onQuery?: (opts: QueryOptions) => void) {
+function makeDs(uid: string, onQuery?: (opts: DashboardDatasourceQueryContext) => void) {
   return defineDatasource({
     uid,
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       onQuery?.(opts)
       return { columns: [], rows: [] }
     },
@@ -30,7 +35,7 @@ test('$env matches variable env but not $environment or $envId', async () => {
   const envDs = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query() {
+    async queryData() {
       return { columns: [], rows: [] }
     },
   })
@@ -161,7 +166,7 @@ test('refreshing panel A does not evict panel B cache', async () => {
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCounts[opts.panelId] = (queryCounts[opts.panelId] ?? 0) + 1
       return { columns: [], rows: [] }
     },
@@ -362,7 +367,7 @@ test('updatePanel refreshes only the target panel', async () => {
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCounts[opts.panelId] = (queryCounts[opts.panelId] ?? 0) + 1
       return { columns: [], rows: [] }
     },
@@ -394,7 +399,7 @@ test('updatePanel with refresh=false updates config without querying', async () 
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCounts[opts.panelId] = (queryCounts[opts.panelId] ?? 0) + 1
       return { columns: [], rows: [] }
     },
@@ -425,7 +430,7 @@ test('updatePanel accepts panel input patch with data request defaults omitted',
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       queryCounts[opts.panelId] = (queryCounts[opts.panelId] ?? 0) + 1
       return { columns: [], rows: [] }
     },
@@ -497,8 +502,8 @@ test('previewPanel uses temp config and does not mutate panel state', async () =
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
-      if (typeof opts.query === 'string') previewQuery = opts.query
+    async queryData(request) {
+      if (typeof request.query === 'string') previewQuery = request.query
       return { columns: [{ name: 'v', type: 'number' }], rows: [[42]] }
     },
   })
@@ -534,7 +539,7 @@ test('previewPanel can be aborted via caller signal', async () => {
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       await new Promise<void>((_, reject) => {
         opts.signal?.addEventListener('abort', () => {
           aborted = true
@@ -624,7 +629,7 @@ test('allValue is passed to datasource when All is selected', async () => {
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       receivedVar = opts.variables['env']
       return { columns: [], rows: [] }
     },
@@ -663,7 +668,7 @@ test('without allValue, All expands to array of concrete values', async () => {
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       receivedVar = opts.variables['env']
       return { columns: [], rows: [] }
     },
@@ -889,12 +894,14 @@ test('external state store time range changes refresh marked variables and casca
 
 test('previewDataRequest runs one request without mutating panel state', async () => {
   let calls = 0
-  let lastOptions: QueryOptions | undefined
+  let lastRequest: DataQuery | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(options) {
+    async queryData(request, options) {
       calls += 1
+      lastRequest = request
       lastOptions = options
       return { columns: [{ name: 'value', type: 'number' }], rows: [[calls]] }
     },
@@ -936,18 +943,18 @@ test('previewDataRequest runs one request without mutating panel state', async (
   assert.equal(calls, 2)
   assert.equal(lastOptions?.panelId, '')
   assert.equal(lastOptions?.requestId, 'preview')
-  assert.equal(lastOptions?.query, 'preview')
+  assert.equal(lastRequest?.query, 'preview')
   assert.deepEqual(lastOptions?.variables, { env: 'staging' })
   assert.equal(lastOptions?.panel, undefined)
   assert.equal(engine.getPanel('p1'), before)
 })
 
 test('previewDataRequest includes panel context when panelId is provided', async () => {
-  let lastOptions: QueryOptions | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(options) {
+    async queryData(_request, options) {
       lastOptions = options
       return { columns: [], rows: [] }
     },
@@ -987,7 +994,7 @@ test('previewDataRequest auth denial rejects without calling datasource', async 
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query() {
+    async queryData() {
       calls += 1
       return { columns: [], rows: [] }
     },
@@ -1017,7 +1024,7 @@ test('previewDataRequest can be aborted via caller signal', async () => {
   const datasource = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    query(options) {
+    queryData(_request, options) {
       return new Promise<QueryResult>((_resolve, reject) => {
         if (options.signal?.aborted) {
           reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }))

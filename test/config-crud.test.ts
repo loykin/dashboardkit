@@ -8,7 +8,7 @@ import {
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
-import type { DashboardConfig, DashboardInput, EngineEvent, QueryOptions } from '@loykin/dashboardkit'
+import type { DashboardConfig, DashboardInput, EngineEvent, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -34,11 +34,11 @@ function baseConfig(): DashboardInput {
   }
 }
 
-function makeDs(onQuery?: (opts: QueryOptions) => void) {
+function makeDs(onQuery?: (opts: DashboardDatasourceQueryContext) => void) {
   return defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       onQuery?.(opts)
       return { columns: [], rows: [] }
     },

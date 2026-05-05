@@ -50,9 +50,9 @@ const CITIES: Record<string, string[]> = {
 const mockDs = defineDatasource({
   uid: 'mock',
   type: 'mock',
-  async query({ query: rawQuery = '', variables }) {
+  async queryData(request, { variables }) {
     // Interpolation is also the plugin's responsibility — substitute using variables from the library
-    const interpolatedQuery = interpolate(String(rawQuery), { variables, builtins: {}, functions: {} })
+    const interpolatedQuery = interpolate(String(request.query ?? ''), { variables, builtins: {}, functions: {} })
 
     await new Promise((r) => setTimeout(r, 300 + Math.random() * 200))
 
@@ -88,15 +88,17 @@ const mockDs = defineDatasource({
       rows: rows.map((r) => [r.time, r.amount, r.city]),
     }
   },
-  async metricFindQuery(query, vars) {
-    const country = (vars['country'] as string) ?? 'KR'
-    if (query.includes('DISTINCT country')) {
-      return ['KR', 'US', 'JP'].map((v) => ({ label: v, value: v }))
-    }
-    if (query.includes('FROM cities')) {
-      return (CITIES[country] ?? []).map((c) => ({ label: c, value: c }))
-    }
-    return []
+  variable: {
+    async metricFindQuery(query, context) {
+      const country = (context.variables['country'] as string) ?? 'KR'
+      if (query.includes('DISTINCT country')) {
+        return ['KR', 'US', 'JP'].map((v) => ({ label: v, value: v }))
+      }
+      if (query.includes('FROM cities')) {
+        return (CITIES[country] ?? []).map((c) => ({ label: c, value: c }))
+      }
+      return []
+    },
   },
 })
 
@@ -108,8 +110,7 @@ const queryVarType = defineVariableType({
   optionsSchema: {},
   async resolve(config, _options, ctx) {
     const request = config.dataRequest
-    const ds = request ? ctx.datasourcePlugins[request.uid] : undefined
-    if (!request?.query || !ds?.metricFindQuery) return []
+    if (!request?.query || !ctx.queryVariableOptions) return []
 
     // Substitute variables in query
     const interpolated = interpolate(String(request.query), {
@@ -117,9 +118,7 @@ const queryVarType = defineVariableType({
       builtins: ctx.builtins,
       functions: {},
     })
-    return ds.metricFindQuery(interpolated, Object.fromEntries(
-      Object.entries(ctx.variables).map(([k, v]) => [k, v]),
-    ))
+    return ctx.queryVariableOptions({ ...request, query: interpolated })
   },
 })
 

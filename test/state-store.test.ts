@@ -9,7 +9,7 @@ import {
   defineVariableType,
 } from '@loykin/dashboardkit'
 import { createUrlDashboardStateStore } from '@loykin/dashboardkit/url-state'
-import type { DashboardInput, QueryOptions } from '@loykin/dashboardkit'
+import type { DashboardInput, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
 
 const panel = definePanel({
   id: 'table',
@@ -64,7 +64,7 @@ test('engine setters write to the canonical dashboard state store', () => {
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query() {
+        async queryData() {
           return { columns: [], rows: [] }
         },
       }),
@@ -88,7 +88,7 @@ test('engine setters write to the canonical dashboard state store', () => {
 })
 
 test('external state store changes drive datasource query variables', async () => {
-  let lastOptions: QueryOptions | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const stateStore = createMemoryDashboardStateStore({
     variables: { country: 'JP' },
     timeRange: { from: 'now-30m', to: 'now' },
@@ -99,7 +99,7 @@ test('external state store changes drive datasource query variables', async () =
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           lastOptions = options
           return {
             columns: [{ name: 'country', type: 'string' }],
@@ -130,7 +130,7 @@ test('external state store changes drive datasource query variables', async () =
 test('unknown URL variables are preserved but never sent to datasource queries', async () => {
   // P1-2: 'JP' is not in the resolved options for country (constantVariableType returns defaultValue 'KR'),
   // so country falls back to 'KR'. The unknown key 'injected' is preserved in stateStore.
-  let lastOptions: QueryOptions | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const stateStore = createMemoryDashboardStateStore({
     variables: {
       country: 'JP',
@@ -143,7 +143,7 @@ test('unknown URL variables are preserved but never sent to datasource queries',
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           lastOptions = options
           return { columns: [], rows: [] }
         },
@@ -169,7 +169,7 @@ test('unknown URL variables are preserved but never sent to datasource queries',
 })
 
 test('unknown variables injected after load do not reach datasource queries', async () => {
-  let lastOptions: QueryOptions | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const stateStore = createMemoryDashboardStateStore({ variables: { country: 'KR' } })
   const engine = createDashboardEngine({
     stateStore,
@@ -177,7 +177,7 @@ test('unknown variables injected after load do not reach datasource queries', as
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query(options) {
+        async queryData(_request, options) {
           lastOptions = options
           return { columns: [], rows: [] }
         },
@@ -208,7 +208,7 @@ test('loading a different dashboard ignores stale variables without removing the
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query() {
+        async queryData() {
           return { columns: [], rows: [] }
         },
       }),

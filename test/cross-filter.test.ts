@@ -7,7 +7,7 @@ import {
   defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
-import type { DashboardInput, EngineEvent, QueryOptions } from '@loykin/dashboardkit'
+import type { DashboardInput, EngineEvent, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -25,12 +25,12 @@ function makeConfig(): DashboardInput {
 }
 
 test('cross-filter variables are merged into panel query effective variables', async () => {
-  const received: Record<string, QueryOptions> = {}
+  const received: Record<string, DashboardDatasourceQueryContext> = {}
 
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       received[opts.panelId] = opts
       return { columns: [], rows: [] }
     },
@@ -51,12 +51,12 @@ test('cross-filter variables are merged into panel query effective variables', a
 })
 
 test('clearing a panel selection removes its filter from other panels', async () => {
-  const received: Record<string, QueryOptions> = {}
+  const received: Record<string, DashboardDatasourceQueryContext> = {}
 
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       received[opts.panelId] = opts
       return { columns: [], rows: [] }
     },
@@ -77,12 +77,12 @@ test('clearing a panel selection removes its filter from other panels', async ()
 })
 
 test('clearAllPanelSelections removes all filters', async () => {
-  const received: Record<string, QueryOptions> = {}
+  const received: Record<string, DashboardDatasourceQueryContext> = {}
 
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       received[opts.panelId] = opts
       return { columns: [], rows: [] }
     },
@@ -124,7 +124,7 @@ test('getPanelSelections returns current selection state', () => {
 
 test('panel-selection-changed event is emitted', async () => {
   const events: EngineEvent[] = []
-  const ds = defineDatasource({ uid: 'ds', type: 'mock', async query() { return { columns: [], rows: [] } } })
+  const ds = defineDatasource({ uid: 'ds', type: 'mock', async queryData() { return { columns: [], rows: [] } } })
   const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
@@ -143,11 +143,11 @@ test('panel-selection-changed event is emitted', async () => {
 })
 
 test('cross-filter is cleared on dashboard load', async () => {
-  const received: Record<string, QueryOptions> = {}
+  const received: Record<string, DashboardDatasourceQueryContext> = {}
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       received[opts.panelId] = opts
       return { columns: [], rows: [] }
     },
@@ -170,11 +170,11 @@ test('cross-filter is cleared on dashboard load', async () => {
 })
 
 test('multiple panel selections are merged for all panels', async () => {
-  const received: Record<string, QueryOptions> = {}
+  const received: Record<string, DashboardDatasourceQueryContext> = {}
   const ds = defineDatasource({
     uid: 'ds',
     type: 'mock',
-    async query(opts) {
+    async queryData(_request, opts) {
       received[opts.panelId] = opts
       return { columns: [], rows: [] }
     },

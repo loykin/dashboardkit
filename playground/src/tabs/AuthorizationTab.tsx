@@ -9,7 +9,7 @@ import type {
   AuthContext,
   DashboardInput,
   PanelPluginDef,
-  QueryOptions,
+  DashboardDatasourceQueryContext,
   QueryResult,
 } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
@@ -85,7 +85,7 @@ export function AuthorizationTab() {
     const datasource = defineDatasource({
       uid: 'backend-query-api',
       type: 'backend',
-      async query(options: QueryOptions) {
+      async queryData(options: DashboardDatasourceQueryContext) {
         setLogs((current) => [
           {
             role: roleRef.current,

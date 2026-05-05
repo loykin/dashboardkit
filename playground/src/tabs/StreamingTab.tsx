@@ -6,10 +6,10 @@ import type { DashboardInput } from '@loykin/dashboardkit'
 const streamDs = defineDatasource({
   uid: 'live',
   type: 'live',
-  async query() {
+  async queryData() {
     return { columns: [{ name: 'value', type: 'number' }, { name: 'ts', type: 'string' }], rows: [] }
   },
-  subscribe(_options, onData) {
+  subscribeData(_request, _context, onData) {
     const id = setInterval(() => {
       onData({
         columns: [{ name: 'value', type: 'number' }, { name: 'ts', type: 'string' }],
@@ -67,8 +67,8 @@ export function StreamingTab() {
     <div className="max-w-2xl">
       <h1 className="text-xl font-bold mb-1">Streaming Datasource</h1>
       <p className="text-sm text-gray-500 mb-6">
-        When a datasource defines <code className="bg-gray-100 px-1 rounded">subscribe()</code>,
-        the engine calls it instead of <code className="bg-gray-100 px-1 rounded">query()</code>.
+        When a datasource defines <code className="bg-gray-100 px-1 rounded">subscribeData()</code>,
+        the engine calls it instead of <code className="bg-gray-100 px-1 rounded">queryData()</code>.
         Subscriptions are cleaned up automatically on panel removal, dashboard unload, or explicit refresh.
       </p>
 
@@ -113,8 +113,8 @@ export function StreamingTab() {
         <div className="text-gray-500 mb-1">// Datasource definition</div>
         <div>defineDatasource{'({'}</div>
         <div className="pl-4">uid: <span className="text-green-400">'live-metrics'</span>,</div>
-        <div className="pl-4 text-gray-400">async query(options) {'{ ... }'},  <span className="text-gray-600">// fallback</span></div>
-        <div className="pl-4">subscribe(options, onData, onError) {'{'}</div>
+        <div className="pl-4 text-gray-400">async queryData(_request, options) {'{ ... }'},  <span className="text-gray-600">// fallback</span></div>
+        <div className="pl-4">subscribeData(request, context, onData, onError) {'{'}</div>
         <div className="pl-8 text-gray-400">// push new data whenever it arrives</div>
         <div className="pl-8">onData(result)</div>
         <div className="pl-8">return {'() => cleanup()'}</div>

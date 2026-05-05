@@ -357,33 +357,6 @@ export interface AuthorizationRequest {
   permissions: PermissionRule[]
 }
 
-// ─── Query Execution Options ─────────────────────────────────────────────────
-// [Library / Plugin boundary]
-//
-// Provided by the library: dashboardId, panelId, requestId, variables, timeRange
-// Owned by the app/plugin/backend: query and datasource.options semantics.
-export interface QueryOptions<TOptions = Record<string, unknown>> {
-  /** Full panel or variable data request object */
-  dataRequest: DataRequestConfig
-  dashboardId: string
-  panelId: string
-  requestId: string
-  query?: string | string[] | Record<string, unknown>
-  requestOptions: Record<string, unknown>
-  variables: Record<string, string | string[]>
-  datasourceOptions: TOptions
-  authContext?: AuthContext
-  /** Resolved ISO timestamps; `raw` contains the original relative expressions */
-  timeRange?: { from: string; to: string; raw?: { from: string; to: string } }
-  maxDataPoints?: number
-  /** AbortSignal — cancelled when a newer request supersedes this one */
-  signal?: AbortSignal
-  builtins?: Record<string, string>
-  panel?: PanelConfig
-  panelOptions?: Record<string, unknown>
-  panelInstance?: PanelRuntimeInstance
-}
-
 // ─── Query Response ─────────────────────────────────────────────────────────────
 export interface QueryResult {
   columns: Array<{ name: string; type: string }>

@@ -46,7 +46,7 @@ test('dashboard engine executeDataRequest can run without loading a dashboard', 
   const ds = defineDashboardDatasource<Record<string, unknown>>({
     uid: 'api',
     type: 'mock',
-    async query(options) {
+    async queryData(_request, options) {
       called = true
       assert.equal(options.dashboardId, '')
       assert.equal(options.panelId, '')
@@ -110,11 +110,7 @@ test('query variables resolve through datasource variable support', async () => 
         return [{ label: 'Korea', value: 'KR' }]
       },
     },
-    async metricFindQuery(query) {
-      calls.push(`fallback:${query}`)
-      return [{ label: 'Fallback', value: 'fallback' }]
-    },
-    async query() {
+    async queryData() {
       return { columns: [], rows: [] }
     },
   })
@@ -223,7 +219,7 @@ test('dashboard engine exposes datasource capability APIs without loading a dash
         return [{ name: 'id', type: 'number' }]
       },
     },
-    async query() {
+    async queryData() {
       return { columns: [], rows: [] }
     },
   })

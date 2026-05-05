@@ -1,5 +1,5 @@
 import { defineDatasource, definePanel } from '@loykin/dashboardkit'
-import type { QueryOptions, QueryResult, VariableOption } from '@loykin/dashboardkit'
+import type { DashboardDatasourceQueryContext, QueryResult, VariableOption } from '@loykin/dashboardkit'
 
 // ── Sales dataset ──────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ const ROWS: [string, string, string, number][] = [
   ['EU', 'Web',    'Q3', 310], ['EU', 'Mobile', 'Q3', 265],
 ]
 
-function filterRows(opts: QueryOptions) {
+function filterRows(opts: DashboardDatasourceQueryContext) {
   return ROWS.filter(([country, platform, quarter]) => {
     const v = opts.variables
     if (v.country  && v.country  !== 'all' && v.country  !== country)  return false
@@ -67,11 +67,11 @@ export type SalesOptions = { delayMs?: number }
 
 export const salesDs = defineDatasource<SalesOptions>({
   uid: 'sales', type: 'sales', name: 'Sales (mock)',
-  async query(opts) {
+  async queryData(request, opts) {
     const delay = (opts.datasourceOptions?.delayMs ?? 250) + Math.random() * 50
     await new Promise((r) => setTimeout(r, delay))
     const filtered = filterRows(opts)
-    const by = String(opts.dataRequest.options.by ?? 'country')
+    const by = String(request.options?.['by'] ?? 'country')
 
     if (by === 'country')  return { columns: [{ name: 'Country',  type: 'string' }, { name: 'Revenue', type: 'number' }], rows: agg(filtered, 0) }
     if (by === 'platform') return { columns: [{ name: 'Platform', type: 'string' }, { name: 'Revenue', type: 'number' }], rows: agg(filtered, 1) }
@@ -91,11 +91,13 @@ export const salesDs = defineDatasource<SalesOptions>({
     }
   },
 
-  async metricFindQuery(query: string, _vars: Record<string, string | string[]>): Promise<VariableOption[]> {
-    if (query === 'countries') return ['All', 'KR', 'US', 'JP', 'EU'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
-    if (query === 'platforms') return ['All', 'Web', 'Mobile'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
-    if (query === 'quarters')  return ['All', 'Q1', 'Q2', 'Q3'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
-    return []
+  variable: {
+    async metricFindQuery(query: string): Promise<VariableOption[]> {
+      if (query === 'countries') return ['All', 'KR', 'US', 'JP', 'EU'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
+      if (query === 'platforms') return ['All', 'Web', 'Mobile'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
+      if (query === 'quarters')  return ['All', 'Q1', 'Q2', 'Q3'].map((v) => ({ label: v, value: v.toLowerCase() === 'all' ? 'all' : v }))
+      return []
+    },
   },
 
   editor: {

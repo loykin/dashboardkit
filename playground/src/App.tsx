@@ -27,6 +27,8 @@ import { CsvExportTab } from './tabs/CsvExportTab'
 import { StreamingTab } from './tabs/StreamingTab'
 import { CacheTtlTab } from './tabs/CacheTtlTab'
 import { AnnotationsTab } from './tabs/AnnotationsTab'
+import { StaticDashboardTab } from './tabs/StaticDashboardTab'
+import { DatasourceKitTab } from './tabs/DatasourceKitTab'
 
 // ── Navigation tree ────────────────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ const NAV: NavGroup[] = [
       { id: 'grafana-style',        label: 'Operations Viewer',    path: '/playground/grafana-style' },
       { id: 'superset-style',       label: 'Explore Cross-filter', path: '/playground/superset-style' },
       { id: 'dashboard',            label: 'Grid Basics',          path: '/playground/dashboard' },
+      { id: 'static-dashboard',     label: 'No Datasource',        path: '/playground/static-dashboard' },
     ],
   },
   {
@@ -57,6 +60,7 @@ const NAV: NavGroup[] = [
       { id: 'transforms',           label: 'Transforms',           path: '/playground/transforms' },
       { id: 'streaming',            label: 'Streaming',            path: '/playground/streaming' },
       { id: 'cache-ttl',            label: 'Cache TTL',            path: '/playground/cache-ttl' },
+      { id: 'datasourcekit',        label: 'DatasourceKit',        path: '/playground/datasourcekit' },
       { id: 'annotations',          label: 'Annotations',          path: '/playground/annotations' },
       { id: 'authorization',        label: 'Authorization',        path: '/playground/authorization' },
       { id: 'navigation-lifecycle', label: 'Builder Lifecycle',    path: '/playground/navigation-lifecycle' },
@@ -168,9 +172,11 @@ export default function App() {
         <Route path="/playground/grafana-style"        element={<GrafanaStyleTab />} />
         <Route path="/playground/superset-style"       element={<SupersetStyleTab />} />
         <Route path="/playground/dashboard"            element={<DashboardDemoTab />} />
+        <Route path="/playground/static-dashboard"     element={<StaticDashboardTab />} />
         <Route path="/playground/transforms"           element={<TransformsTab />} />
         <Route path="/playground/streaming"            element={<StreamingTab />} />
         <Route path="/playground/cache-ttl"            element={<CacheTtlTab />} />
+        <Route path="/playground/datasourcekit"        element={<DatasourceKitTab />} />
         <Route path="/playground/annotations"          element={<AnnotationsTab />} />
         <Route path="/playground/authorization"        element={<AuthorizationTab />} />
         <Route path="/playground/navigation-lifecycle" element={<NavigationLifecycleTab />} />

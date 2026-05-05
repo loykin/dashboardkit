@@ -23,7 +23,7 @@ const S = {
 const ds = defineDatasource({
   uid: 'hosts',
   type: 'mock',
-  async query({ variables }) {
+  async queryData(_request, {  variables  }) {
     const region = String(variables['region'] ?? 'KR')
     const DATA: Record<string, [string, number, number][]> = {
       KR: [['api-1', 12, 420], ['api-2', 5, 310], ['api-3', 0, 180]],

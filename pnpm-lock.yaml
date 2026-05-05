@@ -84,6 +84,9 @@ importers:
       '@loykin/dashboardkit':
         specifier: workspace:*
         version: link:..
+      '@loykin/datasourcekit':
+        specifier: workspace:*
+        version: link:../packages/datasourcekit
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

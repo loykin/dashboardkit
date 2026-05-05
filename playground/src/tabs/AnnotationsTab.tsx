@@ -6,44 +6,46 @@ import type { Annotation, DashboardInput } from '@loykin/dashboardkit'
 const ds = defineDatasource({
   uid: 'events',
   type: 'events',
-  async query() {
+  async queryData() {
     return { columns: [], rows: [] }
   },
-  async queryAnnotations(aq) {
-    const now = Date.now()
-    const events: Annotation[] = [
-      {
-        time: now - 3_600_000 * 3,
-        title: 'Deploy v1.4.0',
-        tags: ['deploy'],
-        color: '#3B82F6',
-        source: aq,
-      },
-      {
-        time: now - 3_600_000 * 2,
-        title: 'Alert: CPU > 90%',
-        text: 'api-2 sustained high CPU for 8 min',
-        tags: ['alert'],
-        color: '#EF4444',
-        source: aq,
-      },
-      {
-        time: now - 3_600_000,
-        timeEnd: now - 1_800_000,
-        title: 'Maintenance window',
-        tags: ['maintenance'],
-        color: '#F59E0B',
-        source: aq,
-      },
-      {
-        time: now - 900_000,
-        title: 'Deploy v1.4.1 (hotfix)',
-        tags: ['deploy'],
-        color: '#3B82F6',
-        source: aq,
-      },
-    ]
-    return events
+  annotations: {
+    async queryAnnotations(aq) {
+      const now = Date.now()
+      const events: Annotation[] = [
+        {
+          time: now - 3_600_000 * 3,
+          title: 'Deploy v1.4.0',
+          tags: ['deploy'],
+          color: '#3B82F6',
+          source: aq,
+        },
+        {
+          time: now - 3_600_000 * 2,
+          title: 'Alert: CPU > 90%',
+          text: 'api-2 sustained high CPU for 8 min',
+          tags: ['alert'],
+          color: '#EF4444',
+          source: aq,
+        },
+        {
+          time: now - 3_600_000,
+          timeEnd: now - 1_800_000,
+          title: 'Maintenance window',
+          tags: ['maintenance'],
+          color: '#F59E0B',
+          source: aq,
+        },
+        {
+          time: now - 900_000,
+          title: 'Deploy v1.4.1 (hotfix)',
+          tags: ['deploy'],
+          color: '#3B82F6',
+          source: aq,
+        },
+      ]
+      return events
+    },
   },
 })
 
@@ -85,7 +87,7 @@ export function AnnotationsTab() {
       <p className="text-sm text-gray-500 mb-6">
         Declare <code className="bg-gray-100 px-1 rounded">annotations[]</code> in the dashboard config.
         Datasources opt in by implementing{' '}
-        <code className="bg-gray-100 px-1 rounded">queryAnnotations(annotationQuery, options)</code>.
+        <code className="bg-gray-100 px-1 rounded">annotations.queryAnnotations(annotationQuery, context)</code>.
         Fetch them with <code className="bg-gray-100 px-1 rounded">engine.getAnnotations()</code> or the{' '}
         <code className="bg-gray-100 px-1 rounded">useAnnotations()</code> hook.
       </p>
@@ -135,7 +137,7 @@ export function AnnotationsTab() {
         <div className="text-gray-500 mb-1">// Dashboard config</div>
         <div>annotations: [{'{'} id: <span className="text-green-400">'ops'</span>, datasourceUid: <span className="text-green-400">'events'</span>, query: <span className="text-green-400">'all'</span> {'}'}]</div>
         <div className="mt-2 text-gray-500">// Datasource opt-in</div>
-        <div>async queryAnnotations(aq, options): <span className="text-blue-400">Promise{'<Annotation[]>'}</span></div>
+        <div>async queryAnnotations(aq, context): <span className="text-blue-400">Promise{'<Annotation[]>'}</span></div>
         <div className="mt-2 text-gray-500">// React</div>
         <div>{'const { annotations } = useAnnotations(engine)'}</div>
       </div>

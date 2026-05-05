@@ -137,3 +137,30 @@ test('validateDataRequest validates request input without executing queries', ()
     [['uid'], ['type']],
   )
 })
+
+test('dashboard can run without datasources when panels do not request data', async () => {
+  const engine = createDashboardEngine({
+    panels: [tablePanel],
+    variableTypes: [],
+  })
+
+  engine.load({
+    schemaVersion: 1,
+    id: 'static-dashboard',
+    title: 'Static Dashboard',
+    panels: [
+      {
+        id: 'static-panel',
+        type: 'table',
+        title: 'Static',
+        gridPos: { x: 0, y: 0, w: 6, h: 4 },
+        options: { title: 'Static panel' },
+      },
+    ],
+  })
+
+  await engine.refreshAll()
+
+  assert.equal(engine.getConfig()?.panels[0]?.dataRequests.length, 0)
+  assert.equal(engine.getPanel('static-panel')?.error, null)
+})

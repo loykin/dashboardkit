@@ -817,7 +817,7 @@ function DatasourceEditPage() {
     }
     setTesting(true); setHealth(null)
     try {
-      const result = await plugin.connector.healthCheck(options as never, {})
+      const result = await plugin.connector.healthCheck(options, {})
       setHealth(result)
     } catch (err) { setHealth({ ok: false, message: String(err) }) }
     finally { setTesting(false) }

@@ -10,7 +10,8 @@ import {
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
-  QueryOptions,
+  DataQuery,
+  DashboardDatasourceQueryContext,
 } from '@loykin/dashboardkit'
 
 const panel = definePanel({
@@ -65,12 +66,14 @@ function dashboardConfig(): DashboardInput {
 
 test('viewer datasource query sends structured datasource request', async () => {
   let queryCalls = 0
-  let lastOptions: QueryOptions | undefined
+  let lastRequest: DataQuery | undefined
+  let lastOptions: DashboardDatasourceQueryContext | undefined
   const datasource = defineDatasource({
     uid: 'backend',
     type: 'backend',
-    async query(options) {
+    async queryData(request, options) {
       queryCalls += 1
+      lastRequest = request
       lastOptions = options
       return {
         columns: [{ name: 'amount', type: 'number' }],
@@ -96,10 +99,10 @@ test('viewer datasource query sends structured datasource request', async () => 
   assert.equal(lastOptions?.dashboardId, 'sales-dashboard')
   assert.equal(lastOptions?.panelId, 'sales-table')
   assert.equal(lastOptions?.requestId, 'main')
-  assert.equal(lastOptions?.dataRequest.uid, 'backend')
-  assert.equal(lastOptions?.dataRequest.type, 'backend')
-  assert.equal(lastOptions?.query, 'sales.list')
-  assert.deepEqual(lastOptions?.requestOptions, { limit: 100 })
+  assert.equal(lastRequest?.datasourceUid, 'backend')
+  assert.equal(lastRequest?.datasourceType, 'backend')
+  assert.equal(lastRequest?.query, 'sales.list')
+  assert.deepEqual(lastRequest?.options, { limit: 100 })
   assert.deepEqual(lastOptions?.variables, { country: 'KR' })
   assert.equal(lastOptions?.authContext?.subject?.id, 'viewer-1')
 })
@@ -109,7 +112,7 @@ test('denied datasource query does not call the datasource plugin', async () => 
   const datasource = defineDatasource({
     uid: 'backend',
     type: 'backend',
-    async query() {
+    async queryData() {
       queryCalls += 1
       return { columns: [], rows: [] }
     },
@@ -139,7 +142,7 @@ test('denied previewPanel datasource query does not call the datasource plugin',
   const datasource = defineDatasource({
     uid: 'backend',
     type: 'backend',
-    async query() {
+    async queryData() {
       queryCalls += 1
       return { columns: [], rows: [] }
     },
@@ -185,7 +188,7 @@ test('datasource plugin type must match data request type', async () => {
   const datasource = defineDatasource({
     uid: 'backend',
     type: 'sql',
-    async query() {
+    async queryData() {
       queryCalls += 1
       return { columns: [], rows: [] }
     },
@@ -217,7 +220,7 @@ test('panel data request ids must be unique within a panel', () => {
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query() {
+        async queryData() {
           return { columns: [], rows: [] }
         },
       }),
@@ -260,7 +263,7 @@ test('denied variable query does not resolve variable options', async () => {
       defineDatasource({
         uid: 'backend',
         type: 'backend',
-        async query() {
+        async queryData() {
           return { columns: [], rows: [] }
         },
       }),
