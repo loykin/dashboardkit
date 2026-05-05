@@ -65,6 +65,8 @@ export const queryVariableType = defineVariableType({
     const request = config.dataRequest
     if (!request?.query || typeof request.query !== 'string') return []
 
+    if (ctx.queryVariableOptions) return ctx.queryVariableOptions(request)
+
     const datasource = ctx.datasourcePlugins[request.uid]
     if (!datasource?.metricFindQuery) return []
 

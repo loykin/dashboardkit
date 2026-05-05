@@ -1,18 +1,32 @@
-import type { DataRequestConfig } from '../schema'
-import type { DatasourcePluginDef } from '../schema'
 import type {
   DatasourceConnectorSupport,
   DatasourceEditorSupport,
+  DatasourcePluginDef,
   DatasourceSchemaSupport,
   DatasourceVariableSupport,
-} from '../plugins'
+} from './types'
 import { DatasourceNotFoundError, DatasourceTypeMismatchError } from './errors'
+
+export interface DatasourceRequestLike {
+  uid?: string
+  type?: string
+  datasourceUid?: string
+  datasourceType?: string
+}
+
+function requestUid(request: DatasourceRequestLike): string {
+  return request.datasourceUid ?? request.uid ?? ''
+}
+
+function requestType(request: DatasourceRequestLike): string | undefined {
+  return request.datasourceType ?? request.type
+}
 
 export interface DatasourceRegistry {
   register(def: DatasourcePluginDef): void
   get(uid: string): DatasourcePluginDef | undefined
-  getForRequest(request: DataRequestConfig): DatasourcePluginDef
-  tryGetForRequest(request: DataRequestConfig): DatasourcePluginDef | undefined
+  getForRequest(request: DatasourceRequestLike): DatasourcePluginDef
+  tryGetForRequest(request: DatasourceRequestLike): DatasourcePluginDef | undefined
   getVariableSupport(uid: string): DatasourceVariableSupport<Record<string, unknown>> | undefined
   getEditorSupport(uid: string): DatasourceEditorSupport<Record<string, unknown>, unknown> | undefined
   getConnectorSupport(uid: string): DatasourceConnectorSupport<Record<string, unknown>> | undefined
@@ -42,16 +56,18 @@ export function createDatasourceRegistry(
     },
 
     getForRequest(request) {
-      const datasource = byUid.get(request.uid)
-      if (!datasource) throw new DatasourceNotFoundError(request.uid)
-      if (datasource.type !== request.type) {
-        throw new DatasourceTypeMismatchError(request.uid, request.type, datasource.type)
+      const uid = requestUid(request)
+      const datasource = byUid.get(uid)
+      if (!datasource) throw new DatasourceNotFoundError(uid)
+      const type = requestType(request)
+      if (type && datasource.type !== type) {
+        throw new DatasourceTypeMismatchError(uid, type, datasource.type)
       }
       return datasource
     },
 
     tryGetForRequest(request) {
-      return byUid.get(request.uid)
+      return byUid.get(requestUid(request))
     },
 
     getVariableSupport(uid) {

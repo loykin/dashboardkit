@@ -38,6 +38,13 @@ a database, manage datasource credentials, or dictate your UI design.
 pnpm add @loykin/dashboardkit
 ```
 
+Install DatasourceKit directly when a runtime needs datasource execution without
+DashboardKit:
+
+```bash
+pnpm add @loykin/datasourcekit
+```
+
 React rendering helpers are optional but require these peer dependencies:
 
 ```bash
@@ -51,6 +58,7 @@ separately.
 
 ```ts
 import { createDashboardEngine } from '@loykin/dashboardkit'
+import { createDatasourceExecutor } from '@loykin/datasourcekit'
 import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 ```
@@ -216,6 +224,11 @@ engine.load(saved, { statePolicy: 'preserve' }) // keeps variable selections
 
 ## Datasource Plugin
 
+DashboardKit datasource plugins receive dashboard execution context because the
+engine is orchestrating panel queries. Use `@loykin/datasourcekit` directly for
+dashboard-independent alert, report, schema browser, query preview, or backend
+job execution.
+
 ```ts
 import { defineDatasource } from '@loykin/dashboardkit'
 
@@ -248,6 +261,40 @@ const datasource = defineDatasource<MyOptions, MyQuery>({
     return items.map((v: string) => ({ label: v, value: v }))
   },
 })
+```
+
+Standalone DatasourceKit plugins use `queryData(request, context)` and do not
+require `dashboardId`, `panelId`, or `requestId`:
+
+```ts
+import { createDatasourceExecutor, defineDatasource } from '@loykin/datasourcekit'
+
+const datasource = defineDatasource({
+  uid: 'main-api',
+  type: 'backend',
+  options: { baseUrl: '/api' },
+
+  async queryData(request, context) {
+    const res = await fetch(`${context.datasourceOptions.baseUrl}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: request.query,
+        options: request.options,
+        variables: context.variables,
+        timeRange: context.timeRange,
+      }),
+      signal: context.signal,
+    })
+    return res.json()
+  },
+})
+
+const executor = createDatasourceExecutor({ datasources: [datasource] })
+const result = await executor.query(
+  { id: 'preview', datasourceUid: 'main-api', query: 'orders.list' },
+  { variables: { country: 'KR' }, meta: { source: 'query-preview' } },
+)
 ```
 
 `query()` receives:
@@ -528,7 +575,11 @@ engine.getAuthContext()
 // Primitives (for addon authoring)
 engine.setPanelQueryScope(panelId, scope | null)  // cross-filter scope per panel
 engine.getPanelQueryScopes()
-engine.executeDataRequest(request, options?)
+engine.executeDataRequest(request, options?)      // can run without a loaded dashboard
+engine.listDatasourceNamespaces(datasourceUid, options?)
+engine.listDatasourceFields(datasourceUid, request, options?)
+engine.healthCheckDatasource(datasourceUid, options?)
+engine.validateDatasourceQuery(datasourceUid, query, options?)
 engine.applyPanelTransforms(type, results)
 engine.invalidateCache(panelIds?)
 

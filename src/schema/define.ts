@@ -58,6 +58,7 @@ export interface VariableResolveContext {
   variables: Record<string, string | string[]>
   dashboard: { id: string; title: string }
   authContext?: AuthContext
+  queryVariableOptions?: (request: import('./types').DataRequestConfig) => Promise<VariableOption[]>
 }
 
 export interface VariableTypePluginDef<TOptions = Record<string, unknown>> {
@@ -166,9 +167,45 @@ export interface CoreEngineAPI {
     options?: {
       panelId?: string
       variablesOverride?: Record<string, string | string[]>
+      timeRange?: { from: string; to: string }
+      authContext?: AuthContext
+      builtins?: Record<string, string>
       signal?: AbortSignal
     },
   ): Promise<QueryResult>
+  listDatasourceNamespaces(
+    datasourceUid: string,
+    options?: {
+      variablesOverride?: Record<string, string | string[]>
+      timeRange?: { from: string; to: string }
+      authContext?: AuthContext
+      builtins?: Record<string, string>
+    },
+  ): Promise<import('../plugins').DatasourceSchemaNamespace[]>
+  listDatasourceFields(
+    datasourceUid: string,
+    request: import('../plugins').DatasourceSchemaFieldRequest,
+    options?: {
+      variablesOverride?: Record<string, string | string[]>
+      timeRange?: { from: string; to: string }
+      authContext?: AuthContext
+      builtins?: Record<string, string>
+    },
+  ): Promise<import('../plugins').DatasourceSchemaField[]>
+  healthCheckDatasource(
+    datasourceUid: string,
+    options?: { authContext?: AuthContext },
+  ): Promise<import('../plugins').DatasourceHealthResult>
+  validateDatasourceQuery(
+    datasourceUid: string,
+    query: unknown,
+    options?: {
+      variablesOverride?: Record<string, string | string[]>
+      timeRange?: { from: string; to: string }
+      authContext?: AuthContext
+      builtins?: Record<string, string>
+    },
+  ): Promise<import('../plugins').DatasourceValidationResult>
   applyPanelTransforms(type: string, results: QueryResult[]): QueryResult[]
   getPanelPlugin(type: string): PanelPluginDef | undefined
   invalidateCache(panelIds?: string[]): void

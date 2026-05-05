@@ -266,12 +266,15 @@ test('updateDashboard updates metadata and rejects structural fields', async () 
   assert.equal(engine.getConfig()?.layout.cols, 12)
   assert.equal(events.at(-1)?.title, 'Updated Dashboard')
 
+  const invalidPanelsPatch = JSON.parse('{"panels":[]}')
+  const invalidVariablesPatch = JSON.parse('{"variables":[]}')
+
   await assert.rejects(
-    () => engine.updateDashboard({ panels: [] } as never),
+    () => engine.updateDashboard(invalidPanelsPatch),
     (err: Error) => err.name === 'DashboardValidationError',
   )
   await assert.rejects(
-    () => engine.updateDashboard({ variables: [] } as never),
+    () => engine.updateDashboard(invalidVariablesPatch),
     (err: Error) => err.name === 'DashboardValidationError',
   )
 })

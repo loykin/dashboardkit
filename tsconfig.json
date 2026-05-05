@@ -13,6 +13,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@loykin/datasourcekit": ["packages/datasourcekit/src/index.ts"],
       "@loykin/dashboardkit": ["src/index.ts"],
       "@loykin/dashboardkit/react": ["src/react.ts"],
       "@loykin/dashboardkit/url-state": ["src/adapters/url-state.ts"],

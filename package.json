@@ -37,7 +37,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json --noEmit && eslint src --ext .ts,.tsx && tsup",
+    "build": "pnpm --filter @loykin/datasourcekit build && tsc -p tsconfig.build.json --noEmit && eslint src --ext .ts,.tsx && tsup",
     "build:js": "tsup",
     "dev": "concurrently \"tsup --watch\" \"pnpm --filter playground dev\"",
     "test": "pnpm type-check && pnpm build && node --experimental-strip-types --test test/*.test.ts",
@@ -46,6 +46,7 @@
     "lint:fix": "eslint src --ext .ts,.tsx --fix"
   },
   "dependencies": {
+    "@loykin/datasourcekit": "workspace:*",
     "zod": "^3.24.4",
     "zustand": "^5.0.12"
   },

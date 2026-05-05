@@ -38,7 +38,7 @@ import type {
 import { createVariableEngine, defaultVariableValue } from '../variables'
 import { createAuthorization } from './authorization'
 import { buildBasePanelInstances, buildPanelExpanders } from '../panels'
-import { createDatasourceRegistry } from '../datasources'
+import { createDashboardDatasourceExecutor, createDatasourceRegistry } from '../datasources'
 
 // ─── Internal Store Shape ───────────────────────────────────────────────────────
 
@@ -89,6 +89,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   } = options
 
   const datasourceRegistry = createDatasourceRegistry(dsDefs)
+  const datasourceExecutor = createDashboardDatasourceExecutor(datasourceRegistry)
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
   const transformRegistry = new Map<string, TransformPluginDef>()
 
@@ -531,6 +532,22 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     return { tr, variables: effectiveVariables }
   }
 
+  function buildDatasourceOperationContext(options: {
+    variablesOverride?: Record<string, string | string[]>
+    timeRange?: { from: string; to: string }
+    authContext?: AuthContext
+    builtins?: Record<string, string>
+  } = {}) {
+    const cfg = store.getState().config
+    const tr = options.timeRange ?? (cfg ? getEffectiveTimeRange() : undefined)
+    return {
+      variables: cfg ? { ...buildCtxVariables(), ...(options.variablesOverride ?? {}) } : { ...(options.variablesOverride ?? {}) },
+      authContext: options.authContext ?? store.getState().authContext,
+      ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
+      builtins: options.builtins ?? varEngine.getBuiltins(),
+    }
+  }
+
   function effectiveCacheTtlMs(request: DataRequestConfig): number | undefined {
     if (request.cacheTtlMs !== undefined) return request.cacheTtlMs
     const ds = datasourceRegistry.tryGetForRequest(request)
@@ -573,35 +590,27 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     emit({ type: 'panel-error', panelId, error })
   }
 
-  function buildQueryOptions(
+  function buildDatasourceContext(
     cfg: DashboardConfig,
     panelId: string,
-    request: DataRequestConfig,
+    requestId: string,
     instance: PanelRuntimeInstance,
     variables: Record<string, string | string[]>,
     tr: { from: string; to: string } | undefined,
     signal: AbortSignal,
   ) {
-    const dsDef = datasourceRegistry.getForRequest(request)
     return {
-      dsDef,
-      opts: {
-        dataRequest: request,
-        dashboardId: cfg.id,
-        panelId,
-        requestId: request.id,
-        ...(request.query !== undefined ? { query: request.query } : {}),
-        requestOptions: request.options,
-        variables,
-        datasourceOptions: dsDef.options ?? ({} as never),
-        authContext: store.getState().authContext,
-        ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
-        signal,
-        builtins: varEngine.getBuiltins(),
-        panel: instance.config,
-        panelOptions: instance.config.options,
-        panelInstance: instance,
-      } as Parameters<typeof dsDef.query>[0],
+      dashboardId: cfg.id,
+      panelId,
+      requestId,
+      variables,
+      authContext: store.getState().authContext,
+      ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
+      signal,
+      builtins: varEngine.getBuiltins(),
+      panel: instance.config,
+      panelOptions: instance.config.options,
+      panelInstance: instance,
     }
   }
 
@@ -616,9 +625,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   ): Promise<QueryResult[]> {
     return Promise.all(
       activeRequests.map(async (request) => {
-        const { dsDef, opts } = buildQueryOptions(cfg, panelId, request, instance, variables, tr, controller.signal)
         const key = cacheKey(panelId, request.id, request.uid, JSON.stringify(request), variables, tr)
-        const result = await dsDef.query(opts)
+        const result = await datasourceExecutor.query(
+          request,
+          buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, controller.signal),
+        )
         assertCurrentPanelRequest(panelId, controller)
         setCache(key, { panelId, requestId: request.id, datasourceUid: request.uid, value: result })
         return { ...result, requestId: request.id }
@@ -646,11 +657,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     }))
 
     activeRequests.forEach((request, i) => {
-      const { dsDef, opts } = buildQueryOptions(cfg, panelId, request, instance, variables, tr, new AbortController().signal)
-      if (!dsDef.subscribe) return
-
-      const unsub = dsDef.subscribe(
-        opts,
+      const unsub = datasourceExecutor.subscribe(
+        request,
+        buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, new AbortController().signal),
         (result) => {
           latestResults[i] = { ...result, requestId: request.id }
           if (latestResults.some((r) => r === null)) return
@@ -667,6 +676,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
           applyPanelError(panelId, error.message)
         },
       )
+      if (!unsub) return
       unsubscribeFns.push(unsub)
     })
 
@@ -1267,15 +1277,22 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     },
 
     async executeDataRequest(request: DataRequestInput, options = {}) {
-      const { panelId, variablesOverride = {}, signal: callerSignal } = options
+      const {
+        panelId,
+        variablesOverride = {},
+        timeRange: explicitTimeRange,
+        authContext: explicitAuthContext,
+        builtins: explicitBuiltins,
+        signal: callerSignal,
+      } = options
       const cfg = store.getState().config
-      if (!cfg) throw new Error('no dashboard loaded')
+      if (!cfg && panelId) throw new Error('panel context requires a loaded dashboard')
 
       const parsedRequest = DataRequestSchema.parse(request)
-      const panelInstance = panelId ? findPanelInstance(panelId) : undefined
+      const panelInstance = cfg && panelId ? findPanelInstance(panelId) : undefined
       const panelConfig = panelInstance?.config
-      const effectiveVariables = { ...buildCtxVariables(), ...variablesOverride }
-      const tr = getEffectiveTimeRange()
+      const effectiveVariables = cfg ? { ...buildCtxVariables(), ...variablesOverride } : { ...variablesOverride }
+      const tr = explicitTimeRange ?? (cfg ? getEffectiveTimeRange() : undefined)
 
       const controller = new AbortController()
       if (callerSignal) {
@@ -1283,23 +1300,19 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
         callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
       }
 
-      const dsDef = datasourceRegistry.getForRequest(parsedRequest)
-      await ensurePreviewDataRequestAuthorized(cfg, parsedRequest, panelConfig)
+      datasourceRegistry.getForRequest(parsedRequest)
+      if (cfg) await ensurePreviewDataRequestAuthorized(cfg, parsedRequest, panelConfig)
       if (controller.signal.aborted) throw abortError()
 
-      const result = await dsDef.query({
-        dataRequest: parsedRequest,
-        dashboardId: cfg.id,
+      const result = await datasourceExecutor.query(parsedRequest, {
+        dashboardId: cfg?.id ?? '',
         panelId: panelId ?? '',
         requestId: parsedRequest.id,
-        ...(parsedRequest.query !== undefined ? { query: parsedRequest.query } : {}),
-        requestOptions: parsedRequest.options,
         variables: effectiveVariables,
-        datasourceOptions: dsDef.options ?? ({} as never),
-        authContext: store.getState().authContext,
+        authContext: explicitAuthContext ?? store.getState().authContext,
         ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
         signal: controller.signal,
-        builtins: varEngine.getBuiltins(),
+        builtins: explicitBuiltins ?? varEngine.getBuiltins(),
         ...(panelConfig ? { panel: panelConfig, panelOptions: panelConfig.options } : {}),
         ...(panelInstance ? { panelInstance } : {}),
       })
@@ -1314,6 +1327,36 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
 
     getPanelPlugin(type) {
       return panelMap.get(type)
+    },
+
+    listDatasourceNamespaces(datasourceUid, options = {}) {
+      return datasourceExecutor.listNamespaces(
+        datasourceUid,
+        buildDatasourceOperationContext(options),
+      )
+    },
+
+    listDatasourceFields(datasourceUid, request, options = {}) {
+      return datasourceExecutor.listFields(
+        datasourceUid,
+        request,
+        buildDatasourceOperationContext(options),
+      )
+    },
+
+    healthCheckDatasource(datasourceUid, options = {}) {
+      return datasourceExecutor.healthCheck(
+        datasourceUid,
+        { authContext: options.authContext ?? store.getState().authContext },
+      )
+    },
+
+    validateDatasourceQuery(datasourceUid, query, options = {}) {
+      return datasourceExecutor.validateQuery(
+        datasourceUid,
+        query,
+        buildDatasourceOperationContext(options),
+      )
     },
 
     invalidateCache(panelIds?) {
@@ -1336,34 +1379,16 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
         cfg.annotations
           .filter((aq) => !aq.hide)
           .map(async (aq) => {
-            const dsDef = datasourceRegistry.get(aq.datasourceUid)
-            if (!dsDef?.queryAnnotations) return [] as Annotation[]
-
-            const opts: Parameters<typeof dsDef.query>[0] = {
-              dataRequest: {
-                id: aq.id,
-                uid: aq.datasourceUid,
-                type: dsDef.type,
-                query: aq.query,
-                options: {},
-                hide: false,
-                permissions: [],
-                staleWhileRevalidate: false,
-              },
+            try {
+              const annotations = await datasourceExecutor.queryAnnotations(aq, {
               dashboardId: cfg.id,
               panelId: '',
               requestId: aq.id,
-              ...(aq.query !== undefined ? { query: aq.query } : {}),
-              requestOptions: {},
               variables: varEngine.getVariables(),
-              datasourceOptions: dsDef.options ?? ({} as never),
               authContext: authCtx,
               ...(resolvedTr ? { timeRange: resolvedTr } : {}),
               builtins: varEngine.getBuiltins(),
-            }
-
-            try {
-              const annotations = await dsDef.queryAnnotations(aq, opts)
+              })
               const annotationColor = aq.color
               return annotations.map((a): Annotation => ({
                 ...a,

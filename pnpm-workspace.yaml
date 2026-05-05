@@ -1,4 +1,6 @@
 packages:
+  - 'packages/*'
   - 'playground'
 allowBuilds:
   esbuild: true
+  msw: set this to true or false

@@ -15,7 +15,7 @@ import type {
   VariableTypePluginDef,
 } from '../schema'
 import { buildCtxBuiltins } from './variable-context'
-import { createDatasourceRegistry } from '../datasources'
+import { createDashboardDatasourceExecutor, createDatasourceRegistry } from '../datasources'
 
 export const ALL_OPTION_VALUE = '$__all'
 
@@ -127,6 +127,7 @@ export function chooseVariableValue(
 export function createVariableEngine(options: VariableEngineOptions): VariableEngine {
   const vtMap = new Map(options.variableTypes.map((v) => [v.id, v]))
   const datasourceRegistry = createDatasourceRegistry(options.datasourcePlugins)
+  const datasourceExecutor = createDashboardDatasourceExecutor(datasourceRegistry)
 
   let sortedVarNames: string[] = []
   let variableConfigs: VariableConfig[] = []
@@ -204,9 +205,17 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
         variables: expandedVariables(),
         dashboard,
         authContext: options.getAuthContext(),
+        queryVariableOptions(request) {
+          return datasourceExecutor.metricFindQuery(request, {
+            variables: expandedVariables(),
+            ...(snapshot.timeRange !== undefined ? { timeRange: snapshot.timeRange } : {}),
+            authContext: options.getAuthContext(),
+            builtins: buildCtxBuiltins(snapshot.timeRange, dashboard),
+          })
+        },
       }
 
-      let resolvedOptions = await vtDef.resolve(vcfg, vcfg.options as never, resolveCtx)
+      let resolvedOptions = await vtDef.resolve(vcfg, vcfg.options, resolveCtx)
 
       // P4-2: sort before injecting All
       resolvedOptions = sortOptions(resolvedOptions, vcfg.sort)
