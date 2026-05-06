@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createCrossFilterAddon,
   createDashboardEngine,
-  defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
-import type { DashboardInput, EngineEvent, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
+import type { DashboardInput, EngineEvent } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -36,7 +36,7 @@ test('cross-filter variables are merged into panel query effective variables', a
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   await new Promise<void>((r) => setTimeout(r, 50))
@@ -62,7 +62,7 @@ test('clearing a panel selection removes its filter from other panels', async ()
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   await new Promise<void>((r) => setTimeout(r, 50))
@@ -88,7 +88,7 @@ test('clearAllPanelSelections removes all filters', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   await new Promise<void>((r) => setTimeout(r, 50))
@@ -105,7 +105,7 @@ test('clearAllPanelSelections removes all filters', async () => {
 })
 
 test('getPanelSelections returns current selection state', () => {
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
 
@@ -125,7 +125,7 @@ test('getPanelSelections returns current selection state', () => {
 test('panel-selection-changed event is emitted', async () => {
   const events: EngineEvent[] = []
   const ds = defineDatasource({ uid: 'ds', type: 'mock', async queryData() { return { columns: [], rows: [] } } })
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   engine.subscribe((e) => events.push(e))
@@ -153,7 +153,7 @@ test('cross-filter is cleared on dashboard load', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   await new Promise<void>((r) => setTimeout(r, 50))
@@ -180,7 +180,7 @@ test('multiple panel selections are merged for all panels', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   const cf = createCrossFilterAddon(engine)
   engine.load(makeConfig())
   await new Promise<void>((r) => setTimeout(r, 50))

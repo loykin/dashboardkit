@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource } from './helpers.ts'
 import {
   createMemoryDashboardStateStore,
   createVariableEngine,
-  defineDatasource,
   defineVariableType,
 } from '@loykin/dashboardkit'
 import type { DashboardConfig } from '@loykin/dashboardkit'
@@ -51,7 +51,7 @@ test('variable engine resolves variables without a dashboard engine', async () =
   const stateStore = createMemoryDashboardStateStore()
   const varEngine = createVariableEngine({
     variableTypes: [queryVariableType],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     stateStore,
     getAuthContext: () => ({}),
     getDashboardConfig: () => dashboard,
@@ -86,7 +86,7 @@ test('variable engine falls back to default when stale canonical value is not in
   const stateStore = createMemoryDashboardStateStore({ variables: { country: 'JP' } })
   const varEngine = createVariableEngine({
     variableTypes: [queryVariableType],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     stateStore,
     getAuthContext: () => ({}),
     getDashboardConfig: () => dashboard,

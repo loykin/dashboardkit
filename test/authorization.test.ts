@@ -1,17 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DataQuery, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createDashboardEngine,
   createEditorAddon,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
-  DataQuery,
-  DashboardDatasourceQueryContext,
 } from '@loykin/dashboardkit'
 
 const panel = definePanel({
@@ -82,7 +80,7 @@ test('viewer datasource query sends structured datasource request', async () => 
     },
   })
   const engine = createDashboardEngine({
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [constantVariableType],
     authContext: { subject: { id: 'viewer-1', roles: ['viewer'] } },
@@ -118,7 +116,7 @@ test('denied datasource query does not call the datasource plugin', async () => 
     },
   })
   const engine = createDashboardEngine({
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [constantVariableType],
     authContext: { subject: { id: 'blocked-1', roles: ['blocked'] } },
@@ -148,7 +146,7 @@ test('denied previewPanel datasource query does not call the datasource plugin',
     },
   })
   const engine = createDashboardEngine({
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [constantVariableType],
     authContext: { subject: { id: 'blocked-1', roles: ['blocked'] } },
@@ -194,7 +192,7 @@ test('datasource plugin type must match data request type', async () => {
     },
   })
   const engine = createDashboardEngine({
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [constantVariableType],
   })
@@ -215,16 +213,15 @@ test('panel data request ids must be unique within a panel', () => {
     { id: 'main', uid: 'backend', type: 'backend' },
     { id: 'main', uid: 'backend', type: 'backend' },
   ]
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async queryData() {
+      return { columns: [], rows: [] }
+    },
+  })
   const engine = createDashboardEngine({
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'backend',
-        type: 'backend',
-        async queryData() {
-          return { columns: [], rows: [] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [constantVariableType],
   })
@@ -258,16 +255,15 @@ test('denied variable query does not resolve variable options', async () => {
       options: {},
     },
   ]
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async queryData() {
+      return { columns: [], rows: [] }
+    },
+  })
   const engine = createDashboardEngine({
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'backend',
-        type: 'backend',
-        async queryData() {
-          return { columns: [], rows: [] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [queryVariableType],
     authorize({ action }) {

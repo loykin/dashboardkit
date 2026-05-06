@@ -1,7 +1,6 @@
 import React from 'react'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
   interpolate,
@@ -11,7 +10,8 @@ import {
   useLoadDashboard,
   useVariable,
 } from '@loykin/dashboardkit/react'
-import type { DashboardInput, QueryResult, PanelPluginDef } from '@loykin/dashboardkit'
+import { defineDatasource } from '@/lib/datasource-adapter'
+import type { DashboardInput, PanelPluginDef, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 // ─── Mock Datasource ───────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ const statPanel = definePanel({
 // ─── Engine (singleton created at module scope) ────────────────────────────────
 
 const engine = createDashboardEngine({
-  datasourcePlugins: [mockDs],
+  datasourceAdapter: mockDs,
   panels: [tablePanel, statPanel] as PanelPluginDef[],
   variableTypes: [queryVarType],
 })

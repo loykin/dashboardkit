@@ -21,19 +21,19 @@ import type {
   CoreEngineAPI,
   DashboardInput,
   DashboardStateStore,
-  DatasourcePluginDef,
   OptionField,
   PanelInput,
   VariableInput,
 } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
+import { createDatasourceAdapter, type DatasourceAdapterDef } from '@/lib/datasource-adapter'
 import { barPanel, salesDs, statPanel, tablePanel, PANEL_TYPES } from './data'
 import type { SalesOptions } from './data'
 
 // ── Datasource plugin registry ────────────────────────────────────────────────
 
-const DS_PLUGIN_TYPES: Record<string, DatasourcePluginDef> = {
-  sales: salesDs as DatasourcePluginDef,
+const DS_PLUGIN_TYPES: Record<string, DatasourceAdapterDef> = {
+  sales: salesDs,
 }
 
 interface DsRecord {
@@ -786,7 +786,7 @@ function DatasourceListPage() {
 function DatasourceEditPage() {
   const { uid } = useParams<{ uid: string }>()
   const nav = useNavigate()
-  const { engine, dsRecords, setDsRecords } = useApp()
+  const { dsRecords, setDsRecords } = useApp()
   const isNew = uid === 'new' || !uid
 
   const [selectedType, setSelectedType] = useState(Object.keys(DS_PLUGIN_TYPES)[0] ?? 'sales')
@@ -830,7 +830,6 @@ function DatasourceEditPage() {
     const rec: DsRecord = { uid: effectiveUid, type: selectedType, name: dsName.trim() || effectiveUid, options }
     const updated = isNew ? [...dsRecords, rec] : dsRecords.map((r) => r.uid === effectiveUid ? rec : r)
     saveDsRecords(updated); setDsRecords(updated)
-    engine.registerDatasource({ ...plugin, uid: effectiveUid, options } as DatasourcePluginDef)
     setBusy(false); nav('/datasources')
   }
 
@@ -929,12 +928,17 @@ export function DashboardAppProvider() {
 
   const engine = useMemo(() => {
     const plugins = dsRecords
-      .map((r) => { const p = DS_PLUGIN_TYPES[r.type]; return p ? ({ ...p, uid: r.uid, options: r.options } as DatasourcePluginDef) : null })
-      .filter((p): p is DatasourcePluginDef => p !== null)
-    const e = createDashboardEngine({ panels: [statPanel, barPanel, tablePanel], datasourcePlugins: plugins, variableTypes: builtinVariableTypes, stateStore })
+      .map((r) => { const p = DS_PLUGIN_TYPES[r.type]; return p ? ({ ...p, uid: r.uid, options: r.options } as DatasourceAdapterDef) : null })
+      .filter((p): p is DatasourceAdapterDef => p !== null)
+    const e = createDashboardEngine({
+      panels: [statPanel, barPanel, tablePanel],
+      datasourceAdapter: createDatasourceAdapter(plugins),
+      variableTypes: builtinVariableTypes,
+      stateStore,
+    })
     e.load(INITIAL_DASHBOARD)
     return e
-  }, [stateStore]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stateStore, dsRecords])
 
   useLoadDashboard(engine, INITIAL_DASHBOARD)
   useEffect(() => () => engine.destroy(), [engine])

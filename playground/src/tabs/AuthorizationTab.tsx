@@ -1,7 +1,6 @@
 import React from 'react'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useLoadDashboard } from '@loykin/dashboardkit/react'
@@ -9,10 +8,10 @@ import type {
   AuthContext,
   DashboardInput,
   PanelPluginDef,
-  DashboardDatasourceQueryContext,
   QueryResult,
 } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
+import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
 
 type Role = 'viewer' | 'editor'
 
@@ -85,7 +84,7 @@ export function AuthorizationTab() {
     const datasource = defineDatasource({
       uid: 'backend-query-api',
       type: 'backend',
-      async queryData(options: DashboardDatasourceQueryContext) {
+      async queryData(_request, options: DashboardDatasourceQueryContext) {
         setLogs((current) => [
           {
             role: roleRef.current,
@@ -111,7 +110,7 @@ export function AuthorizationTab() {
     })
 
     return createDashboardEngine({
-      datasourcePlugins: [datasource],
+      datasourceAdapter: datasource,
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [
         {
@@ -189,7 +188,7 @@ export function AuthorizationTab() {
           <div className="border-b border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
             Backend Request Log
           </div>
-          <div className="max-h-[320px] overflow-auto p-3">
+          <div className="max-h-80 overflow-auto p-3">
             {logs.length === 0 ? (
               <p className="text-xs text-gray-400">No backend requests</p>
             ) : (

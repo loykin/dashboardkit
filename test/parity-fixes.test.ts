@@ -1,18 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DataQuery, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createDashboardEngine,
   createEditorAddon,
-  defineDatasource,
   definePanel,
   defineVariableType,
   createMemoryDashboardStateStore,
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
-  DashboardDatasourceQueryContext,
-  DataQuery,
   QueryResult,
 } from '@loykin/dashboardkit'
 
@@ -66,7 +64,7 @@ test('$env matches variable env but not $environment or $envId', async () => {
     },
   })
 
-  const engine2 = createDashboardEngine({ panels: [panel], datasourcePlugins: [envDs], variableTypes: [constantType] })
+  const engine2 = createDashboardEngine({ panels: [panel], datasourceAdapter: envDs, variableTypes: [constantType] })
   engine2.load(config)
   await new Promise<void>((r) => setTimeout(r, 50))
 
@@ -97,7 +95,7 @@ test('A -> B -> C: changing A cascades to refresh B and C', async () => {
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [chainType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [chainType] })
 
   // A is independent, B depends on A's query, C depends on B's query
   engine.load({
@@ -135,7 +133,7 @@ test('variable with two changed parents refreshes once', async () => {
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [countType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [countType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -172,7 +170,7 @@ test('refreshing panel A does not evict panel B cache', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -208,7 +206,7 @@ test('refreshVariable refreshes one variable without touching unrelated ones', a
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [trackType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [trackType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -244,7 +242,7 @@ test('invalid current value falls back to first option after options refresh', a
   const stateStore = createMemoryDashboardStateStore({ variables: { env: 'gamma' } })
   const ds = makeDs('ds')
   const engine = createDashboardEngine({
-    panels: [panel], datasourcePlugins: [ds], variableTypes: [dynamicType], stateStore,
+    panels: [panel], datasourceAdapter: ds, variableTypes: [dynamicType], stateStore,
   })
 
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [{ name: 'env', type: 'dynamic' }], panels: [] })
@@ -268,7 +266,7 @@ test('valid current value is preserved after options refresh', async () => {
   })
 
   const engine = createDashboardEngine({
-    panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType], stateStore,
+    panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType], stateStore,
   })
 
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [{ name: 'env', type: 'fixed' }], panels: [] })
@@ -294,7 +292,7 @@ test('replace-dashboard-variables replaces stale variable values from previous d
   })
 
   const engine = createDashboardEngine({
-    panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType], stateStore,
+    panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType], stateStore,
   })
 
   engine.load(
@@ -324,7 +322,7 @@ test('preserve policy keeps existing state values', async () => {
   })
 
   const engine = createDashboardEngine({
-    panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType], stateStore,
+    panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType], stateStore,
   })
 
   engine.load(
@@ -348,7 +346,7 @@ test('load with explicit state snapshot applies it', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load(
     { schemaVersion: 1, id: 'd', title: 'D', variables: [{ name: 'env', type: 'fixed', defaultValue: 'prod' }], panels: [] },
@@ -373,7 +371,7 @@ test('updatePanel refreshes only the target panel', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -405,7 +403,7 @@ test('updatePanel with refresh=false updates config without querying', async () 
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -436,7 +434,7 @@ test('updatePanel accepts panel input patch with data request defaults omitted',
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -464,7 +462,7 @@ test('updatePanel accepts panel input patch with data request defaults omitted',
 
 test('updatePanel throws PanelNotFoundError for unknown or repeat instance id', async () => {
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
   await new Promise<void>((r) => setTimeout(r, 20))
@@ -477,7 +475,7 @@ test('updatePanel throws PanelNotFoundError for unknown or repeat instance id', 
 
 test('updatePanel rejects patches that change the panel id', async () => {
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -508,7 +506,7 @@ test('previewPanel uses temp config and does not mutate panel state', async () =
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -550,7 +548,7 @@ test('previewPanel can be aborted via caller signal', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
   await new Promise<void>((r) => setTimeout(r, 20))
 
@@ -573,7 +571,7 @@ test('previewPanel can be aborted via caller signal', async () => {
 
 test('previewPanel rejects immediately when caller signal is already aborted', async () => {
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [] })
   engine.load({ schemaVersion: 1, id: 'd', title: 'D', variables: [], panels: [] })
   await new Promise<void>((r) => setTimeout(r, 20))
 
@@ -609,7 +607,7 @@ test('includeAll injects an All option at the top', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -644,7 +642,7 @@ test('allValue is passed to datasource when All is selected', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -683,7 +681,7 @@ test('without allValue, All expands to array of concrete values', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -714,7 +712,7 @@ test('alphaAsc sort orders options alphabetically ascending', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -739,7 +737,7 @@ test('numericAsc sort orders options numerically ascending', async () => {
     },
   })
 
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [fixedType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [fixedType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -768,7 +766,7 @@ test('variable dataRequest options participate in dependency cascade', async () 
   })
 
   const ds = makeDs('ds')
-  const engine = createDashboardEngine({ panels: [panel], datasourcePlugins: [ds], variableTypes: [trackType] })
+  const engine = createDashboardEngine({ panels: [panel], datasourceAdapter: ds, variableTypes: [trackType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -801,7 +799,7 @@ test('time range change refreshes variables marked refreshOnTimeRangeChange', as
 
   const ds = makeDs('ds')
   const stateStore = createMemoryDashboardStateStore()
-  const engine = createDashboardEngine({ stateStore, panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+  const engine = createDashboardEngine({ stateStore, panels: [panel], datasourceAdapter: ds, variableTypes: [timeType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -833,7 +831,7 @@ test('time range change does not refresh unmarked variables', async () => {
 
   const ds = makeDs('ds')
   const stateStore2 = createMemoryDashboardStateStore()
-  const engine = createDashboardEngine({ stateStore: stateStore2, panels: [panel], datasourcePlugins: [ds], variableTypes: [timeType] })
+  const engine = createDashboardEngine({ stateStore: stateStore2, panels: [panel], datasourceAdapter: ds, variableTypes: [timeType] })
 
   engine.load({
     schemaVersion: 1, id: 'd', title: 'D',
@@ -869,7 +867,7 @@ test('external state store time range changes refresh marked variables and casca
   const ds = makeDs('ds')
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [ds],
+    datasourceAdapter: ds,
     variableTypes: [cascadeType],
     stateStore,
   })
@@ -917,7 +915,7 @@ test('previewDataRequest runs one request without mutating panel state', async (
   })
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [constantType],
   })
 
@@ -961,7 +959,7 @@ test('previewDataRequest includes panel context when panelId is provided', async
   })
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
   })
 
@@ -1001,7 +999,7 @@ test('previewDataRequest auth denial rejects without calling datasource', async 
   })
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
     authorize({ action }) {
       if (action === 'datasource:query') return { allowed: false, reason: 'preview denied' }
@@ -1038,7 +1036,7 @@ test('previewDataRequest can be aborted via caller signal', async () => {
   })
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
   })
 

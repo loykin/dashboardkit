@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createDashboardEngine, defineDatasource, definePanel } from '@loykin/dashboardkit'
+import { createDashboardEngine, definePanel } from '@loykin/dashboardkit'
+import { defineDatasource } from '@/lib/datasource-adapter'
 import { useLoadDashboard, usePanel } from '@loykin/dashboardkit/react'
 import type { DashboardInput } from '@loykin/dashboardkit'
 
@@ -34,7 +35,7 @@ const panel = definePanel({
 
 const engine = createDashboardEngine({
   panels: [panel],
-  datasourcePlugins: [ds],
+  datasourceAdapter: ds,
   variableTypes: [],
 })
 

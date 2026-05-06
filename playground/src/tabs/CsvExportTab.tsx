@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   exportToCsv,
 } from '@loykin/dashboardkit'
 import { useLoadDashboard, usePanel } from '@loykin/dashboardkit/react'
+import { defineDatasource } from '@/lib/datasource-adapter'
 import type { DashboardInput } from '@loykin/dashboardkit'
 
 const S = {
@@ -63,7 +63,7 @@ const tablePanel = definePanel({
 
 const engine = createDashboardEngine({
   panels: [statPanel, tablePanel],
-  datasourcePlugins: [ds],
+  datasourceAdapter: ds,
   variableTypes: [],
 })
 

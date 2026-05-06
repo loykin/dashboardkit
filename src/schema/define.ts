@@ -1,5 +1,5 @@
 import type { OptionSchema, ValidateOptionSchemaOptions, ValidationResult } from './options'
-import type { DatasourcePluginDef } from '../plugins'
+import type { DashboardDatasourceAdapter } from '../datasources'
 import type { PanelPluginDef } from '../plugins'
 import type {
   Annotation,
@@ -25,22 +25,10 @@ import type {
   VariableOption,
 } from './types'
 
-export type { DatasourcePluginDef } from '../plugins/datasource'
+export type { DashboardDatasourceAdapter, DashboardDatasourceContext } from '../datasources'
 export type { PanelPluginDef, PanelProps } from '../plugins/panel'
 export type { ValidateOptionSchemaOptions, ValidationResult, ValidationError } from './options'
 export type { TransformPluginDef } from '../transforms'
-
-// ─── Datasource Plugin ───────────────────────────────────────────────────────────────
-// uid: 1:1 mapping with dataRequest.uid in the dashboard JSON
-// options: infrastructure config for this instance (URL, auth, etc.) — differs per environment
-export function defineDatasource<
-  TOptions = Record<string, unknown>,
-  TQuery = unknown,
->(
-  def: DatasourcePluginDef<TOptions, TQuery>,
-): DatasourcePluginDef<TOptions, TQuery> {
-  return def
-}
 
 // ─── Panel Plugin ───────────────────────────────────────────────────────────────
 
@@ -53,7 +41,6 @@ export function definePanel<TOptions = Record<string, unknown>, TData = unknown>
 // ─── VariableType Plugin ────────────────────────────────────────────────────────
 
 export interface VariableResolveContext {
-  datasourcePlugins: Record<string, DatasourcePluginDef>
   builtins: Record<string, string>
   variables: Record<string, string | string[]>
   dashboard: { id: string; title: string }
@@ -83,7 +70,7 @@ export function defineVariableType<TOptions = Record<string, unknown>>(
 
 export interface CreateDashboardEngineOptions {
   panels?: PanelPluginDef[]
-  datasourcePlugins?: DatasourcePluginDef[]
+  datasourceAdapter?: DashboardDatasourceAdapter
   variableTypes?: ReadonlyArray<VariableTypePluginDef>
   panelExpanders?: PanelExpander[]
   stateStore?: DashboardStateStore
@@ -181,21 +168,21 @@ export interface CoreEngineAPI {
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../plugins').DatasourceSchemaNamespace[]>
+  ): Promise<import('../datasources').DatasourceSchemaNamespace[]>
   listDatasourceFields(
     datasourceUid: string,
-    request: import('../plugins').DatasourceSchemaFieldRequest,
+    request: import('../datasources').DatasourceSchemaFieldRequest,
     options?: {
       variablesOverride?: Record<string, string | string[]>
       timeRange?: { from: string; to: string }
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../plugins').DatasourceSchemaField[]>
+  ): Promise<import('../datasources').DatasourceSchemaField[]>
   healthCheckDatasource(
     datasourceUid: string,
     options?: { authContext?: AuthContext },
-  ): Promise<import('../plugins').DatasourceHealthResult>
+  ): Promise<import('../datasources').DatasourceHealthResult>
   validateDatasourceQuery(
     datasourceUid: string,
     query: unknown,
@@ -205,7 +192,7 @@ export interface CoreEngineAPI {
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../plugins').DatasourceValidationResult>
+  ): Promise<import('../datasources').DatasourceValidationResult>
   applyPanelTransforms(type: string, results: QueryResult[]): QueryResult[]
   getPanelPlugin(type: string): PanelPluginDef | undefined
   invalidateCache(panelIds?: string[]): void
@@ -224,7 +211,6 @@ export interface CoreEngineAPI {
 
   // Runtime registration — add plugins after engine creation
   registerPanel(def: PanelPluginDef): void
-  registerDatasource(def: DatasourcePluginDef): void
   registerVariableType(def: VariableTypePluginDef): void
   registerTransform(def: import('../transforms').TransformPluginDef): void
 }

@@ -3,7 +3,6 @@ import {
   createDashboardEngine,
   createEditorAddon,
   createMemoryDashboardStateStore,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
@@ -14,7 +13,8 @@ import {
   usePanelDraftEditor,
   useVariable,
 } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
+import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
+import type { CoreEngineAPI, DashboardInput, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 type DashboardKey = 'ops' | 'billing'
@@ -188,7 +188,7 @@ export function NavigationLifecycleTab() {
   const engine = useMemo(() => createDashboardEngine({
     stateStore,
     panels: [tablePanel, statPanel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [staticVariable],
   }), [stateStore])
   const [savedDashboards, setSavedDashboards] = useState<Record<DashboardKey, DashboardInput>>(() => ({ ...dashboards }))

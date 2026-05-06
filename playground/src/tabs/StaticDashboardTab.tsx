@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { createDashboardEngine, definePanel } from '@loykin/dashboardkit'
 import { DashboardGrid, useLoadDashboard } from '@loykin/dashboardkit/react'
-import type { DashboardInput, PanelRenderProps } from '@loykin/dashboardkit'
+import type { DashboardInput } from '@loykin/dashboardkit'
+import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 const runbookPanel = definePanel({
   id: 'runbook',

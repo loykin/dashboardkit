@@ -3,11 +3,11 @@ import {
   createCrossFilterAddon,
   createDashboardEngine,
   createEditorAddon,
-  defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
+import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
+import type { CoreEngineAPI, DashboardInput, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 const salesRows = [
@@ -53,7 +53,7 @@ const datasource = defineDatasource({
   type: 'sales',
   async queryData(_request, options) {
     const rows = filteredRows(options)
-    const dimension = String((options.dataRequest.options.dimension ?? 'country'))
+    const dimension = String((options.dataRequest?.options.dimension ?? 'country'))
     if (dimension === 'segment') {
       const grouped = new Map<string, number>()
       rows.forEach(([, segment, value]) => grouped.set(String(segment), (grouped.get(String(segment)) ?? 0) + Number(value)))
@@ -193,7 +193,7 @@ function renderPanel(engine: CoreEngineAPI, props: PanelRenderProps) {
 export function SupersetStyleTab() {
   const engine = useMemo(() => createDashboardEngine({
     panels: [chartPanel, tablePanel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
   }), [])
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>('country-chart')

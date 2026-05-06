@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource } from './helpers.ts'
 import {
   createDashboardEngine,
   createLayoutAddon,
-  defineDatasource,
   definePanel,
 } from '@loykin/dashboardkit'
 import type { QueryResult } from '@loykin/dashboardkit'
@@ -19,7 +19,6 @@ function wait(ms = 20): Promise<void> {
 test('collapsed row excludes child panels from runtime instances', () => {
   const engine = createDashboardEngine({
     panels: [panel, rowPanel],
-    datasourcePlugins: [],
     variableTypes: [],
   })
 
@@ -76,7 +75,7 @@ test('expanding a row triggers queries for newly visible child panels', async ()
   })
   const engine = createDashboardEngine({
     panels: [panel, rowPanel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
   })
 
@@ -133,7 +132,7 @@ test('collapsing a row aborts in-flight requests for child panels', async () => 
   })
   const engine = createDashboardEngine({
     panels: [panel, rowPanel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [],
   })
 

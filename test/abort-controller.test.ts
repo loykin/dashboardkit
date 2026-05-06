@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource } from './helpers.ts'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
@@ -60,7 +60,7 @@ test('datasource receives AbortSignal on each query call', async () => {
 
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [ds],
+    datasourceAdapter: ds,
     variableTypes: [constantVariableType],
   })
 
@@ -101,7 +101,7 @@ test('previous panel request is aborted when a newer request starts', async () =
 
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [ds],
+    datasourceAdapter: ds,
     variableTypes: [constantVariableType],
   })
 
@@ -147,7 +147,7 @@ test('load() aborts pending panel requests before replacing dashboard state', as
 
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [ds],
+    datasourceAdapter: ds,
     variableTypes: [constantVariableType],
   })
 

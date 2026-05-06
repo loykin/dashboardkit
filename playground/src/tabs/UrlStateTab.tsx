@@ -1,7 +1,6 @@
 import React from 'react'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
@@ -13,6 +12,7 @@ import type {
   QueryResult,
 } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
+import { defineDatasource } from '@/lib/datasource-adapter'
 
 const countries = ['KR', 'US', 'JP']
 
@@ -100,7 +100,7 @@ export function UrlStateTab() {
 
     return createDashboardEngine({
       stateStore,
-      datasourcePlugins: [datasource],
+      datasourceAdapter: datasource,
       panels: [tablePanel] as PanelPluginDef[],
       variableTypes: [staticVariableType],
     })

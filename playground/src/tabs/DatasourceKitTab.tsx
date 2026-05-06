@@ -84,7 +84,7 @@ const datasource = defineDatasource({
   },
 })
 
-const executor = createDatasourceExecutor({ datasources: [datasource] })
+const executor = createDatasourceExecutor({ datasources: [datasource as never] })
 
 function ResultTable({ result }: { result: QueryResult | null }) {
   if (!result) return <p className="text-xs text-gray-400">Run a query to see rows.</p>
@@ -143,7 +143,7 @@ export function DatasourceKitTab() {
       executor.listNamespaces('sales-api'),
       executor.listFields('sales-api', { namespaceId: 'sales.orders' }),
       datasource.variable?.metricFindQuery('countries', {
-        datasourceOptions: datasource.options ?? {},
+        datasourceOptions: datasource.options!,
         variables: {},
       }),
     ])

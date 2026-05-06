@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource } from './helpers.ts'
 import {
   createDashboardEngine,
   createMemoryDashboardStateStore,
   createVariableEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
@@ -41,7 +41,6 @@ test('variable readiness tracks idle, loading, success, error, and missing state
   const stateStore = createMemoryDashboardStateStore()
   const varEngine = createVariableEngine({
     variableTypes: [slowType, errorType],
-    datasourcePlugins: [],
     stateStore,
     getAuthContext: () => ({}),
     getDashboardConfig: () => null,
@@ -126,18 +125,17 @@ test('core exposes panel dependency and readiness for runtime instances', async 
     ],
   }
 
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    async queryData() {
+      return { columns: [], rows: [] }
+    },
+  })
   const engine = createDashboardEngine({
     panels: [panel],
     variableTypes: [hostType],
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'ds',
-        type: 'mock',
-        async queryData() {
-          return { columns: [], rows: [] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
   })
 
   engine.load(config)

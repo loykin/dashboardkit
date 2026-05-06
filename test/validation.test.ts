@@ -27,7 +27,6 @@ const tablePanel = definePanel({
 test('validatePanelOptions validates options against panel option schema', () => {
   const engine = createDashboardEngine({
     panels: [tablePanel],
-    datasourcePlugins: [],
     variableTypes: [],
   })
 
@@ -78,7 +77,6 @@ test('validatePanelOptions can reject unknown options and custom validation fail
   })
   const engine = createDashboardEngine({
     panels: [metricPanel],
-    datasourcePlugins: [],
     variableTypes: [],
   })
 
@@ -107,7 +105,6 @@ test('validatePanelOptions can reject unknown options and custom validation fail
 test('validatePanelOptions reports missing panel type', () => {
   const engine = createDashboardEngine({
     panels: [tablePanel],
-    datasourcePlugins: [],
     variableTypes: [],
   })
 
@@ -120,7 +117,6 @@ test('validatePanelOptions reports missing panel type', () => {
 test('validateDataRequest validates request input without executing queries', () => {
   const engine = createDashboardEngine({
     panels: [tablePanel],
-    datasourcePlugins: [],
     variableTypes: [],
   })
 

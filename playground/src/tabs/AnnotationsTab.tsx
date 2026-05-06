@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { createDashboardEngine, defineDatasource, definePanel } from '@loykin/dashboardkit'
+import { createDashboardEngine, definePanel } from '@loykin/dashboardkit'
+import { defineDatasource } from '@/lib/datasource-adapter'
 import { useAnnotations, useLoadDashboard } from '@loykin/dashboardkit/react'
 import type { Annotation, DashboardInput } from '@loykin/dashboardkit'
 
@@ -10,7 +11,7 @@ const ds = defineDatasource({
     return { columns: [], rows: [] }
   },
   annotations: {
-    async queryAnnotations(aq) {
+    async queryAnnotations() {
       const now = Date.now()
       const events: Annotation[] = [
         {
@@ -18,7 +19,6 @@ const ds = defineDatasource({
           title: 'Deploy v1.4.0',
           tags: ['deploy'],
           color: '#3B82F6',
-          source: aq,
         },
         {
           time: now - 3_600_000 * 2,
@@ -26,7 +26,6 @@ const ds = defineDatasource({
           text: 'api-2 sustained high CPU for 8 min',
           tags: ['alert'],
           color: '#EF4444',
-          source: aq,
         },
         {
           time: now - 3_600_000,
@@ -34,14 +33,12 @@ const ds = defineDatasource({
           title: 'Maintenance window',
           tags: ['maintenance'],
           color: '#F59E0B',
-          source: aq,
         },
         {
           time: now - 900_000,
           title: 'Deploy v1.4.1 (hotfix)',
           tags: ['deploy'],
           color: '#3B82F6',
-          source: aq,
         },
       ]
       return events
@@ -51,7 +48,7 @@ const ds = defineDatasource({
 
 const engine = createDashboardEngine({
   panels: [definePanel({ id: 'chart', name: 'Chart', optionsSchema: {}, transform: () => null })],
-  datasourcePlugins: [ds],
+  datasourceAdapter: ds,
   variableTypes: [],
 })
 

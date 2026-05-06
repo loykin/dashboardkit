@@ -1,16 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
   PanelExpander,
-  DashboardDatasourceQueryContext,
 } from '@loykin/dashboardkit'
 
 const panel = definePanel({
@@ -69,16 +68,15 @@ function dashboardConfig(): DashboardInput {
 }
 
 test('repeat expands one panel config into runtime panel instances', async () => {
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async queryData(_request, options) {
+      return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
+    },
+  })
   const engine = createDashboardEngine({
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'backend',
-        type: 'backend',
-        async queryData(_request, options) {
-          return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [listVariableType],
   })
@@ -103,17 +101,16 @@ test('repeat expands one panel config into runtime panel instances', async () =>
 
 test('refreshPanel executes a repeat instance with its scoped variable value', async () => {
   const queryOptions: DashboardDatasourceQueryContext[] = []
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async queryData(_request, options) {
+      queryOptions.push(options)
+      return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
+    },
+  })
   const engine = createDashboardEngine({
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'backend',
-        type: 'backend',
-        async queryData(_request, options) {
-          queryOptions.push(options)
-          return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [listVariableType],
   })
@@ -137,16 +134,15 @@ test('custom panel expanders can filter runtime instances after repeat expansion
       return instances.filter((instance) => instance.repeat?.value !== 'api-2')
     },
   }
+  const datasource = defineDatasource({
+    uid: 'backend',
+    type: 'backend',
+    async queryData(_request, options) {
+      return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
+    },
+  })
   const engine = createDashboardEngine({
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'backend',
-        type: 'backend',
-        async queryData(_request, options) {
-          return { columns: [{ name: 'host', type: 'string' }], rows: [[options.variables['host']]] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
     panels: [panel],
     variableTypes: [listVariableType],
     panelExpanders: [hideApi2],

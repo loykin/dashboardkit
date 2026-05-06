@@ -24,7 +24,6 @@ const variableConfig = {
 }
 
 const resolveContext = {
-  datasourcePlugins: {},
   builtins: {},
   variables: {},
   dashboard: { id: 'dash', title: 'Dash' },

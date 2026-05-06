@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createDashboardEngine,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
-import type { DashboardInput, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
+import type { DashboardInput } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -51,19 +51,18 @@ function config(): DashboardInput {
 
 test('datasource query options include runtime panel context and builtins', async () => {
   const seen: DashboardDatasourceQueryContext[] = []
+  const datasource = defineDatasource({
+    uid: 'ds',
+    type: 'mock',
+    async queryData(_request, options) {
+      seen.push(options)
+      return { columns: [], rows: [] }
+    },
+  })
   const engine = createDashboardEngine({
     panels: [panel],
     variableTypes: [listType],
-    datasourcePlugins: [
-      defineDatasource({
-        uid: 'ds',
-        type: 'mock',
-        async queryData(_request, options) {
-          seen.push(options)
-          return { columns: [], rows: [] }
-        },
-      }),
-    ],
+    datasourceAdapter: datasource,
   })
 
   engine.load(config())

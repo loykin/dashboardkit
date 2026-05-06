@@ -1,14 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { defineDatasource, type DashboardDatasourceQueryContext } from './helpers.ts'
 import {
   createDashboardEngine,
   createMemoryDashboardStateStore,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
-import type { DashboardConfig, DashboardInput, EngineEvent, DashboardDatasourceQueryContext } from '@loykin/dashboardkit'
+import type { DashboardConfig, DashboardInput, EngineEvent } from '@loykin/dashboardkit'
 
 const panel = definePanel({ id: 'table', name: 'Table', optionsSchema: {} })
 
@@ -62,7 +62,7 @@ test('addPanel updates saveable config and creates runtime instances', async () 
   const queriedPanels: string[] = []
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs((opts) => queriedPanels.push(opts.panelId))],
+    datasourceAdapter: makeDs((opts) => queriedPanels.push(opts.panelId)),
     variableTypes: [],
   })
 
@@ -86,7 +86,7 @@ test('addPanel updates saveable config and creates runtime instances', async () 
 test('addPanel rejects duplicate origin panel ids', async () => {
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs()],
+    datasourceAdapter: makeDs(),
     variableTypes: [],
   })
 
@@ -107,7 +107,7 @@ test('removePanel updates config and removes runtime instances without refreshin
   const queriedPanels: string[] = []
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs((opts) => queriedPanels.push(opts.panelId))],
+    datasourceAdapter: makeDs((opts) => queriedPanels.push(opts.panelId)),
     variableTypes: [],
   })
 
@@ -137,7 +137,7 @@ test('removePanel updates config and removes runtime instances without refreshin
 test('removePanel rejects repeat runtime instance ids', async () => {
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs()],
+    datasourceAdapter: makeDs(),
     variableTypes: [constantVariableType],
   })
 
@@ -176,7 +176,7 @@ test('variable CRUD updates config, runtime state, and preserves unknown state k
   const queriedVariables: Array<Record<string, string | string[]>> = []
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs((opts) => queriedVariables.push(opts.variables))],
+    datasourceAdapter: makeDs((opts) => queriedVariables.push(opts.variables)),
     variableTypes: [constantVariableType],
     stateStore,
   })
@@ -221,7 +221,7 @@ test('variable CRUD updates config, runtime state, and preserves unknown state k
 test('updateVariable rejects renames and unknown variables', async () => {
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs()],
+    datasourceAdapter: makeDs(),
     variableTypes: [constantVariableType],
   })
 
@@ -245,7 +245,7 @@ test('updateDashboard updates metadata and rejects structural fields', async () 
   const events: DashboardConfig[] = []
   const engine = createDashboardEngine({
     panels: [panel],
-    datasourcePlugins: [makeDs()],
+    datasourceAdapter: makeDs(),
     variableTypes: [],
   })
   engine.subscribe((event: EngineEvent) => {

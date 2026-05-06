@@ -1,5 +1,6 @@
-import { defineDatasource, definePanel } from '@loykin/dashboardkit'
-import type { DashboardDatasourceQueryContext, QueryResult, VariableOption } from '@loykin/dashboardkit'
+import { definePanel } from '@loykin/dashboardkit'
+import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
+import type { QueryResult, VariableOption } from '@loykin/dashboardkit'
 
 // ── Sales dataset ──────────────────────────────────────────────────────────────
 

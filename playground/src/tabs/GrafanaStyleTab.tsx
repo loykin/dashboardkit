@@ -3,12 +3,12 @@ import {
   createDashboardEngine,
   createEditorAddon,
   createMemoryDashboardStateStore,
-  defineDatasource,
   definePanel,
   defineVariableType,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
-import type { CoreEngineAPI, DashboardInput, DashboardStateStore, DashboardDatasourceQueryContext, QueryResult } from '@loykin/dashboardkit'
+import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
+import type { CoreEngineAPI, DashboardInput, DashboardStateStore, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 interface SeriesRow {
@@ -231,7 +231,7 @@ export function GrafanaStyleTab() {
   const engine = useMemo(() => createDashboardEngine({
     stateStore,
     panels: [tablePanel, statPanel, rowPanel],
-    datasourcePlugins: [datasource],
+    datasourceAdapter: datasource,
     variableTypes: [optionVariable],
   }), [stateStore])
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>('cpu-stat')

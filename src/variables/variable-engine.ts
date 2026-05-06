@@ -6,7 +6,6 @@ import type {
   DashboardConfig,
   DashboardStateStore,
   DataRequestConfig,
-  DatasourcePluginDef,
   VariableConfig,
   VariableOption,
   VariableReadiness,
@@ -15,13 +14,14 @@ import type {
   VariableTypePluginDef,
 } from '../schema'
 import { buildCtxBuiltins } from './variable-context'
-import { createDashboardDatasourceExecutor, createDatasourceRegistry } from '../datasources'
+import { createMissingDashboardDatasourceAdapter } from '../datasources'
+import type { DashboardDatasourceAdapter } from '../datasources'
 
 export const ALL_OPTION_VALUE = '$__all'
 
 export interface VariableEngineOptions {
   variableTypes: ReadonlyArray<VariableTypePluginDef>
-  datasourcePlugins: DatasourcePluginDef[]
+  datasourceAdapter?: DashboardDatasourceAdapter
   stateStore: DashboardStateStore
   getAuthContext: () => AuthContext
   getDashboardConfig: () => DashboardConfig | null
@@ -126,8 +126,7 @@ export function chooseVariableValue(
 
 export function createVariableEngine(options: VariableEngineOptions): VariableEngine {
   const vtMap = new Map(options.variableTypes.map((v) => [v.id, v]))
-  const datasourceRegistry = createDatasourceRegistry(options.datasourcePlugins)
-  const datasourceExecutor = createDashboardDatasourceExecutor(datasourceRegistry)
+  const datasourceAdapter = options.datasourceAdapter ?? createMissingDashboardDatasourceAdapter()
 
   let sortedVarNames: string[] = []
   let variableConfigs: VariableConfig[] = []
@@ -195,23 +194,27 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
       const dashboard = cfg ? { id: cfg.id, title: cfg.title } : { id: '', title: '' }
 
       if (vcfg.dataRequest) {
-        datasourceRegistry.getForRequest(vcfg.dataRequest)
+        await datasourceAdapter.validateRequest?.(vcfg.dataRequest, {
+          variables: expandedVariables(),
+          ...(snapshot.timeRange !== undefined ? { timeRange: snapshot.timeRange } : {}),
+          authContext: options.getAuthContext(),
+          builtins: buildCtxBuiltins(snapshot.timeRange, dashboard),
+        })
         if (cfg) await options.authorizeVariableQuery?.(cfg, vcfg, vcfg.dataRequest)
       }
 
       const resolveCtx: VariableResolveContext = {
-        datasourcePlugins: datasourceRegistry.toRecord(),
         builtins: buildCtxBuiltins(snapshot.timeRange, dashboard),
         variables: expandedVariables(),
         dashboard,
         authContext: options.getAuthContext(),
         queryVariableOptions(request) {
-          return datasourceExecutor.metricFindQuery(request, {
+          return datasourceAdapter.metricFindQuery?.(request, {
             variables: expandedVariables(),
             ...(snapshot.timeRange !== undefined ? { timeRange: snapshot.timeRange } : {}),
             authContext: options.getAuthContext(),
             builtins: buildCtxBuiltins(snapshot.timeRange, dashboard),
-          })
+          }) ?? Promise.resolve([])
         },
       }
 

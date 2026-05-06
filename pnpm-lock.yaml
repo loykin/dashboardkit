@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@loykin/datasourcekit':
-        specifier: workspace:*
-        version: link:packages/datasourcekit
       zod:
         specifier: ^3.24.4
         version: 3.25.76
@@ -21,6 +18,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.4
         version: 9.39.4
+      '@loykin/datasourcekit':
+        specifier: workspace:*
+        version: link:packages/datasourcekit
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17
