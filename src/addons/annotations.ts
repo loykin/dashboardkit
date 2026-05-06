@@ -7,7 +7,7 @@ export interface AnnotationAddon {
 export function createAnnotationAddon(engine: CoreEngineAPI): AnnotationAddon {
   return {
     getAnnotations(timeRange) {
-      return engine.queryAnnotations(timeRange)
+      return engine.queryAnnotations()
     },
   }
 }

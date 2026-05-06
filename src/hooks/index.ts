@@ -448,7 +448,7 @@ export function useAnnotations(
   const fetch = useCallback(() => {
     setLoading(true)
     setError(null)
-    engine.queryAnnotations(timeRangeRef.current).then(
+    engine.queryAnnotations().then(
       (result) => { setAnnotations(result); setLoading(false) },
       (err: unknown) => { setError(err instanceof Error ? err.message : String(err)); setLoading(false) },
     )

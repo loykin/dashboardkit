@@ -236,7 +236,7 @@ export function createDatasourceExecutor(
       }))
 
       if (ds.annotations?.queryAnnotations) {
-        return ds.annotations.queryAnnotations(annotationQuery, {
+        return ds.annotations.queryAnnotations({
           ...ctx,
           datasourceOptions: ds.options ?? {},
         })
