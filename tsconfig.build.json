@@ -9,7 +9,6 @@
     "rootDir": "src",
     "outDir": "dist",
     "paths": {
-      "@loykin/datasourcekit": ["packages/datasourcekit/dist/index.d.ts"],
       "@loykin/dashboardkit": ["src/index.ts"],
       "@loykin/dashboardkit/react": ["src/react.ts"],
       "@loykin/dashboardkit/url-state": ["src/adapters/url-state.ts"],

@@ -146,7 +146,7 @@ export function defineDatasource<TOptions = Record<string, unknown>, TQuery = un
     },
     async queryAnnotations(query, context) {
       const request = { id: query.id, uid: query.datasourceUid, type: def.type, query: query.query, options: {}, hide: false, permissions: [], staleWhileRevalidate: false }
-      return def.annotations?.queryAnnotations?.(contextFor<TOptions, TQuery>(def, request, context)) ?? []
+      return def.annotations?.queryAnnotations?.(query, contextFor<TOptions, TQuery>(def, request, context)) ?? []
     },
     async listNamespaces(_datasourceUid, context) {
       const request = { id: 'schema', uid: def.uid, type: def.type, options: {}, hide: false, permissions: [], staleWhileRevalidate: false }
@@ -193,7 +193,7 @@ export function createDatasourceAdapter(
       return get(request.uid)?.metricFindQuery?.(request, context) ?? Promise.resolve([])
     },
     queryAnnotations(query, context) {
-      return get(query.datasourceUid)?.queryAnnotations?.(context) ?? Promise.resolve([])
+      return get(query.datasourceUid)?.queryAnnotations?.(query, context) ?? Promise.resolve([])
     },
     listNamespaces(datasourceUid, context) {
       return get(datasourceUid)?.listNamespaces?.(datasourceUid, context) ?? Promise.resolve([])

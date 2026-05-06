@@ -1382,14 +1382,14 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
           .filter((aq) => !aq.hide)
           .map(async (aq) => {
             try {
-              const annotations = await datasourceAdapter.queryAnnotations?.({
-              dashboardId: cfg.id,
-              panelId: '',
-              requestId: aq.id,
-              variables: varEngine.getVariables(),
-              authContext: authCtx,
-              ...(resolvedTr ? { timeRange: resolvedTr } : {}),
-              builtins: varEngine.getBuiltins(),
+              const annotations = await datasourceAdapter.queryAnnotations?.(aq, {
+                dashboardId: cfg.id,
+                panelId: '',
+                requestId: aq.id,
+                variables: varEngine.getVariables(),
+                authContext: authCtx,
+                ...(resolvedTr ? { timeRange: resolvedTr } : {}),
+                builtins: varEngine.getBuiltins(),
               }) ?? []
               const annotationColor = aq.color
               return annotations.map((a): Annotation => ({

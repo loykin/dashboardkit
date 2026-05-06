@@ -107,7 +107,7 @@ const DASHBOARD: DashboardInput = {
       gridPos: { x: 7, y: 4, w: 5, h: 5 },
       options: {
         links: [
-          { label: 'DatasourceKit example', href: '/playground/datasourcekit' },
+          { label: 'Datasource adapter demo', href: '/playground/annotations' },
           { label: 'Full dashboard', href: '/dashboard/sales' },
           { label: 'Builder lifecycle', href: '/playground/navigation-lifecycle' },
         ],

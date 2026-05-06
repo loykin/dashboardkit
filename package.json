@@ -79,7 +79,6 @@
     "react-dom": "^19.2.5",
     "react-grid-layout": "^2.2.3",
     "tsup": "^8.4.0",
-    "@loykin/datasourcekit": "workspace:*",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.58.2"
   },

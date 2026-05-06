@@ -18,9 +18,6 @@ importers:
       '@eslint/js':
         specifier: ^9.39.4
         version: 9.39.4
-      '@loykin/datasourcekit':
-        specifier: workspace:*
-        version: link:packages/datasourcekit
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17
@@ -64,15 +61,6 @@ importers:
         specifier: ^8.58.2
         version: 8.59.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
 
-  packages/datasourcekit:
-    devDependencies:
-      tsup:
-        specifier: ^8.4.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.10)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
-
   playground:
     dependencies:
       '@base-ui/react':
@@ -84,9 +72,6 @@ importers:
       '@loykin/dashboardkit':
         specifier: workspace:*
         version: link:..
-      '@loykin/datasourcekit':
-        specifier: workspace:*
-        version: link:../packages/datasourcekit
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
