@@ -98,7 +98,7 @@ function Sidebar() {
         <p className="text-xs text-muted-foreground font-mono mt-0.5">@loykin/dashboardkit</p>
       </div>
       <Separator />
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <nav className="px-3 py-4 space-y-5">
           {NAV.map((group) => (
             <div key={group.label}>
