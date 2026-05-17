@@ -532,7 +532,7 @@ function PanelEditorPage() {
       const patch = buildPatch()
       const { data, rawData } = await createEditorAddon(engine).previewPanel(instId, { ...currentPanel, ...patch })
       setPreviewData(data)
-      setPreviewStatus(`${rawData[0]?.rows.length ?? 0} rows`)
+      setPreviewStatus(`${rawData[0]?.frames[0]?.fields[0]?.values.length ?? 0} rows`)
     } catch (err) {
       setPreviewStatus(`Error: ${err instanceof Error ? err.message : String(err)}`)
       setPreviewData(null)

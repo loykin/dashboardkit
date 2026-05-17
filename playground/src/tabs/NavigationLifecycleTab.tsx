@@ -5,6 +5,7 @@ import {
   createMemoryDashboardStateStore,
   definePanel,
   defineVariableType,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import {
   DashboardGrid,
@@ -26,7 +27,7 @@ const tablePanel = definePanel({
     title: { type: 'string', label: 'Title', required: true },
   },
   transform(results: QueryResult[]) {
-    return results[0]?.rows ?? []
+    return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
 })
 
@@ -37,7 +38,7 @@ const statPanel = definePanel({
     title: { type: 'string', label: 'Title', required: true },
   },
   transform(results: QueryResult[]) {
-    return results[0]?.rows.at(-1)?.[1] ?? null
+    return results[0] ? queryResultToTableRows(results[0]).rows.at(-1)?.[1] ?? null : null
   },
 })
 

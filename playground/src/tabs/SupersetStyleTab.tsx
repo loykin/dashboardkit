@@ -4,6 +4,7 @@ import {
   createDashboardEngine,
   createEditorAddon,
   definePanel,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@loykin/dashboardkit/react'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
@@ -27,7 +28,7 @@ const chartPanel = definePanel({
     title: { type: 'string', label: 'Title', required: true },
   },
   transform(results: QueryResult[]) {
-    return results[0]?.rows ?? []
+    return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
 })
 
@@ -36,7 +37,7 @@ const tablePanel = definePanel({
   name: 'Table',
   optionsSchema: {},
   transform(results: QueryResult[]) {
-    return results[0]?.rows ?? []
+    return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
 })
 
@@ -283,7 +284,7 @@ function SupersetPanelEditor({
 
   async function runPreview() {
     const result = await createEditorAddon(engine).previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
-    setPreviewRows(result.rawData.reduce((count, data) => count + data.rows.length, 0))
+    setPreviewRows(result.rawData.reduce((count, data) => count + queryResultToTableRows(data).rows.length, 0))
   }
 
   return (

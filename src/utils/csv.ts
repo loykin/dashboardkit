@@ -1,4 +1,4 @@
-import type { QueryResult } from '../schema'
+import { queryResultToTableRows, type QueryResult } from '../schema'
 
 // Escapes a cell value for CSV (RFC 4180).
 function csvCell(value: unknown): string {
@@ -17,7 +17,8 @@ export function exportToCsv(rawData: QueryResult[]): string {
   const colNames: string[] = []
   const seen = new Set<string>()
   for (const result of rawData) {
-    for (const col of result.columns) {
+    const table = queryResultToTableRows(result)
+    for (const col of table.columns) {
       if (!seen.has(col.name)) {
         colNames.push(col.name)
         seen.add(col.name)
@@ -28,8 +29,9 @@ export function exportToCsv(rawData: QueryResult[]): string {
   const lines: string[] = [colNames.map(csvCell).join(',')]
 
   for (const result of rawData) {
-    const indices = colNames.map((name) => result.columns.findIndex((c) => c.name === name))
-    for (const row of result.rows) {
+    const table = queryResultToTableRows(result)
+    const indices = colNames.map((name) => table.columns.findIndex((c) => c.name === name))
+    for (const row of table.rows) {
       lines.push(indices.map((i) => csvCell(i === -1 ? null : row[i])).join(','))
     }
   }

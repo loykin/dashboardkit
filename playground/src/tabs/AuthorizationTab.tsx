@@ -2,6 +2,7 @@ import React from 'react'
 import {
   createDashboardEngine,
   definePanel,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useLoadDashboard } from '@loykin/dashboardkit/react'
 import type {
@@ -31,9 +32,9 @@ const tablePanel = definePanel({
   name: 'Secure Table',
   optionsSchema: {},
   transform(results: QueryResult[]) {
-    const result = results[0] ?? { columns: [], rows: [] }
-    return result.rows.map((row) =>
-      Object.fromEntries(result.columns.map((column, index) => [column.name, row[index]])),
+    const table = results[0] ? queryResultToTableRows(results[0]) : { columns: [], rows: [] }
+    return table.rows.map((row) =>
+      Object.fromEntries(table.columns.map((column, index) => [column.name, row[index]])),
     )
   },
 })

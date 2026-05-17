@@ -6,6 +6,7 @@ import {
   createDashboardEngine,
   definePanel,
   defineVariableType,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
@@ -124,7 +125,7 @@ test('refreshPanel executes a repeat instance with its scoped variable value', a
   const lastOptions = queryOptions.at(-1)
   assert.equal(lastOptions?.panelId, 'cpu__repeat__1')
   assert.deepEqual(lastOptions?.variables, { host: 'api-2' })
-  assert.deepEqual(engine.getPanel('cpu__repeat__1')?.rawData?.[0]?.rows, [['api-2']])
+  assert.deepEqual(queryResultToTableRows(engine.getPanel('cpu__repeat__1')!.rawData![0]!).rows, [['api-2']])
 })
 
 test('custom panel expanders can filter runtime instances after repeat expansion', async () => {

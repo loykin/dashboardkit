@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { applyTransforms } from '@loykin/dashboardkit'
+import { applyTransforms, queryResultToTableRows, tableRowsToQueryResult } from '@loykin/dashboardkit'
 import type { QueryResult } from '@loykin/dashboardkit'
 
 const S = {
@@ -13,7 +13,7 @@ const S = {
 }
 
 const RAW: QueryResult[] = [
-  {
+  tableRowsToQueryResult({
     columns: [
       { name: 'host', type: 'string' },
       { name: 'errors', type: 'number' },
@@ -26,8 +26,8 @@ const RAW: QueryResult[] = [
       ['api-3', 0, 150],
       ['api-2', 20, 500],
     ],
-  },
-  {
+  }),
+  tableRowsToQueryResult({
     columns: [
       { name: 'host', type: 'string' },
       { name: 'latency_ms', type: 'number' },
@@ -37,7 +37,7 @@ const RAW: QueryResult[] = [
       ['api-2', 85],
       ['api-3', 200],
     ],
-  },
+  }),
 ]
 
 type Step = 'raw' | 'merge' | 'groupBy' | 'calculate' | 'sortBy' | 'filterByValue' | 'rename'
@@ -84,15 +84,19 @@ function ResultTable({ results }: { results: QueryResult[] }) {
     <div className="space-y-3">
       {results.map((result, ri) => (
         <div key={ri}>
+          {(() => {
+            const table = queryResultToTableRows(result)
+            return (
+              <>
           {results.length > 1 && (
             <p className="text-xs text-gray-400 mb-1">Result [{ri}]</p>
           )}
           <table className={S.table}>
             <thead>
-              <tr>{result.columns.map((c) => <th key={c.name} className={S.th}>{c.name}</th>)}</tr>
+              <tr>{table.columns.map((c) => <th key={c.name} className={S.th}>{c.name}</th>)}</tr>
             </thead>
             <tbody>
-              {result.rows.map((row, i) => (
+              {table.rows.map((row, i) => (
                 <tr key={i}>
                   {row.map((cell, j) => (
                     <td key={j} className={S.td}>
@@ -103,6 +107,9 @@ function ResultTable({ results }: { results: QueryResult[] }) {
               ))}
             </tbody>
           </table>
+              </>
+            )
+          })()}
         </div>
       ))}
     </div>

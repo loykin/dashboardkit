@@ -650,6 +650,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     panelSubscriptions.delete(panelId)
 
     const unsubscribeFns: Array<() => void> = []
+    const streamControllers: AbortController[] = []
     const latestResults: (QueryResult | null)[] = activeRequests.map(() => null)
 
     store.setState((s) => ({
@@ -657,9 +658,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     }))
 
     activeRequests.forEach((request, i) => {
+      const controller = new AbortController()
+      streamControllers.push(controller)
       const unsub = datasourceAdapter.subscribe?.(
         request,
-        buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, new AbortController().signal),
+        buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, controller.signal),
         (result) => {
           latestResults[i] = { ...result, requestId: request.id }
           if (latestResults.some((r) => r === null)) return
@@ -682,10 +685,12 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
 
     if (unsubscribeFns.length > 0) {
       panelSubscriptions.set(panelId, () => {
+        for (const ctrl of streamControllers) ctrl.abort()
         for (const fn of unsubscribeFns) fn()
       })
       return true
     } else {
+      for (const ctrl of streamControllers) ctrl.abort()
       store.setState((s) => ({
         panels: { ...s.panels, [panelId]: { ...s.panels[panelId]!, streaming: false } },
       }))
@@ -1345,11 +1350,9 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     healthCheckDatasource(datasourceUid, options = {}) {
       return datasourceAdapter.healthCheck?.(
         datasourceUid,
-        {
-          variables: {},
-          authContext: options.authContext ?? store.getState().authContext,
-          builtins: varEngine.getBuiltins(),
-        },
+        buildDatasourceOperationContext(
+          options.authContext !== undefined ? { authContext: options.authContext } : {},
+        ),
       ) ?? Promise.resolve({ ok: false, message: 'healthCheck not supported' })
     },
 

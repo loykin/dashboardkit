@@ -5,6 +5,7 @@ import {
   createMemoryDashboardStateStore,
   definePanel,
   defineVariableType,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
@@ -25,7 +26,7 @@ const tablePanel = definePanel({
     unit: { type: 'string', label: 'Unit' },
   },
   transform(results: QueryResult[]) {
-    return results.flatMap((result) => result.rows) as unknown[][]
+    return results.flatMap((result) => queryResultToTableRows(result).rows) as unknown[][]
   },
 })
 
@@ -36,7 +37,7 @@ const statPanel = definePanel({
     title: { type: 'string', label: 'Title', required: true },
   },
   transform(results: QueryResult[]) {
-    const rows = results[0]?.rows ?? []
+    const rows = results[0] ? queryResultToTableRows(results[0]).rows : []
     const latest = rows.at(-1)?.[1]
     return typeof latest === 'number' ? latest : null
   },
@@ -329,7 +330,7 @@ function GrafanaPanelEditor({
 
   async function runPreview() {
     const result = await createEditorAddon(engine).previewPanel(panelId!, { ...instance!.config, ...buildDraft() })
-    setPreviewRows(result.rawData.reduce((count, data) => count + data.rows.length, 0))
+    setPreviewRows(result.rawData.reduce((count, data) => count + queryResultToTableRows(data).rows.length, 0))
   }
 
   return (

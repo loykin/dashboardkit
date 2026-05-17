@@ -6,6 +6,7 @@ import {
   createDashboardEngine,
   definePanel,
   defineVariableType,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import type { DashboardInput } from '@loykin/dashboardkit'
 
@@ -122,7 +123,7 @@ test('previous panel request is aborted when a newer request starts', async () =
 
   const state = engine.getPanel('p1')
   assert.equal(state?.error, null)
-  assert.deepEqual(state?.rawData?.[0]?.rows, [['new']])
+  assert.deepEqual(queryResultToTableRows(state!.rawData![0]!).rows, [['new']])
 })
 
 test('load() aborts pending panel requests before replacing dashboard state', async () => {

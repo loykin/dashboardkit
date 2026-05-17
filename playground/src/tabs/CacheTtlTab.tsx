@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createDashboardEngine, definePanel } from '@loykin/dashboardkit'
+import { createDashboardEngine, definePanel, queryResultToTableRows } from '@loykin/dashboardkit'
 import { defineDatasource } from '@/lib/datasource-adapter'
 import { useLoadDashboard, usePanel } from '@loykin/dashboardkit/react'
 import type { DashboardInput } from '@loykin/dashboardkit'
@@ -30,7 +30,7 @@ const panel = definePanel({
   id: 'metrics',
   name: 'Metrics',
   optionsSchema: {},
-  transform(results) { return results[0]?.rows ?? [] },
+  transform(results) { return results[0] ? queryResultToTableRows(results[0]).rows : [] },
 })
 
 const engine = createDashboardEngine({

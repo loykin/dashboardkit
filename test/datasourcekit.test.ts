@@ -5,6 +5,8 @@ import { defineDatasource } from './helpers.ts'
 import {
   builtinVariableTypes,
   createDashboardEngine,
+  queryResultToTableRows,
+  tableRowsToQueryResult,
 } from '@loykin/dashboardkit'
 
 test('dashboard engine executeDataRequest can run without loading a dashboard', async () => {
@@ -38,7 +40,7 @@ test('dashboard engine executeDataRequest can run without loading a dashboard', 
   )
 
   assert.equal(called, true)
-  assert.deepEqual(result.rows, [[2]])
+  assert.deepEqual(queryResultToTableRows(result).rows, [[2]])
 })
 
 test('dashboard engine can use a datasource adapter without datasource plugins', async () => {
@@ -47,10 +49,10 @@ test('dashboard engine can use a datasource adapter without datasource plugins',
     datasourceAdapter: {
       async query(request, context) {
         calls.push(`query:${request.uid}:${request.type}:${context.dashboardId}:${context.panelId}`)
-        return {
+        return tableRowsToQueryResult({
           columns: [{ name: 'value', type: 'number' }],
           rows: [[context.variables['country']]],
-        }
+        })
       },
       async metricFindQuery(request, context) {
         calls.push(`variable:${request.uid}:${request.type}:${context.variables['env']}`)
@@ -86,7 +88,7 @@ test('dashboard engine can use a datasource adapter without datasource plugins',
   await new Promise<void>((resolve) => setTimeout(resolve, 30))
 
   assert.equal(engine.getVariable('country')?.value, 'KR')
-  assert.deepEqual(engine.getPanel('p1')?.rawData?.[0]?.rows, [['KR']])
+  assert.deepEqual(queryResultToTableRows(engine.getPanel('p1')!.rawData![0]!).rows, [['KR']])
   assert.deepEqual(calls, [
     'variable:remote-api:rest:prod',
     'query:remote-api:rest:adapter-dashboard:p1',
@@ -100,6 +102,32 @@ test('dashboard engine reports a clear error when datasource adapter is missing'
     engine.executeDataRequest({ id: 'main', uid: 'api', type: 'rest', query: 'select 1' }),
     /No datasource adapter configured/,
   )
+})
+
+test('missing datasource adapter records query variable errors without throwing from load', async () => {
+  const engine = createDashboardEngine({ variableTypes: builtinVariableTypes })
+
+  assert.doesNotThrow(() => {
+    engine.load({
+      schemaVersion: 1,
+      id: 'missing-adapter-vars',
+      title: 'Missing Adapter Vars',
+      variables: [
+        {
+          name: 'country',
+          type: 'query',
+          dataRequest: { id: 'countries', uid: 'api', type: 'mock', query: 'countries' },
+        },
+      ],
+      panels: [],
+    })
+  })
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+  const variable = engine.getVariable('country')
+  assert.equal(variable?.status, 'error')
+  assert.match(variable?.error ?? '', /No datasource adapter configured/)
 })
 
 test('query variables resolve through datasource variable support', async () => {

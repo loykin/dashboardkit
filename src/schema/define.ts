@@ -1,5 +1,12 @@
 import type { OptionSchema, ValidateOptionSchemaOptions, ValidationResult } from './options'
-import type { DashboardDatasourceAdapter } from '../datasources'
+import type {
+  DashboardDatasourceAdapter,
+  DatasourceHealthResult,
+  DatasourceSchemaField,
+  DatasourceSchemaFieldRequest,
+  DatasourceSchemaNamespace,
+  DatasourceValidationResult,
+} from '../datasources'
 import type { PanelPluginDef } from '../plugins'
 import type {
   Annotation,
@@ -168,21 +175,21 @@ export interface CoreEngineAPI {
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../datasources').DatasourceSchemaNamespace[]>
+  ): Promise<DatasourceSchemaNamespace[]>
   listDatasourceFields(
     datasourceUid: string,
-    request: import('../datasources').DatasourceSchemaFieldRequest,
+    request: DatasourceSchemaFieldRequest,
     options?: {
       variablesOverride?: Record<string, string | string[]>
       timeRange?: { from: string; to: string }
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../datasources').DatasourceSchemaField[]>
+  ): Promise<DatasourceSchemaField[]>
   healthCheckDatasource(
     datasourceUid: string,
     options?: { authContext?: AuthContext },
-  ): Promise<import('../datasources').DatasourceHealthResult>
+  ): Promise<DatasourceHealthResult>
   validateDatasourceQuery(
     datasourceUid: string,
     query: unknown,
@@ -192,7 +199,7 @@ export interface CoreEngineAPI {
       authContext?: AuthContext
       builtins?: Record<string, string>
     },
-  ): Promise<import('../datasources').DatasourceValidationResult>
+  ): Promise<DatasourceValidationResult>
   applyPanelTransforms(type: string, results: QueryResult[]): QueryResult[]
   getPanelPlugin(type: string): PanelPluginDef | undefined
   invalidateCache(panelIds?: string[]): void

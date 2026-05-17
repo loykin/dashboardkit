@@ -4,6 +4,7 @@ import {
   definePanel,
   defineVariableType,
   interpolate,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import {
   DashboardGrid,
@@ -125,8 +126,9 @@ const queryVarType = defineVariableType({
 // ─── Panel Definitions ────────────────────────────────────────────────────────
 
 function toRows(result: QueryResult) {
-  return result.rows.map((row) =>
-    Object.fromEntries(result.columns.map((c, i) => [c.name, row[i]])),
+  const table = queryResultToTableRows(result)
+  return table.rows.map((row) =>
+    Object.fromEntries(table.columns.map((c, i) => [c.name, row[i]])),
   ) as Record<string, unknown>[]
 }
 
@@ -134,7 +136,7 @@ const tablePanel = definePanel({
   id: 'table',
   name: 'Table Panel',
   optionsSchema: {},
-  transform: (results) => toRows(results[0] ?? { columns: [], rows: [] }),
+  transform: (results) => results[0] ? toRows(results[0]) : [],
 })
 
 const statPanel = definePanel({
@@ -142,8 +144,7 @@ const statPanel = definePanel({
   name: 'Stat Panel',
   optionsSchema: {},
   transform: (results) => {
-    const result = results[0] ?? { columns: [], rows: [] }
-    const rows = toRows(result)
+    const rows = results[0] ? toRows(results[0]) : []
     const total = rows.reduce((sum, r) => sum + ((r['amount'] as number) ?? 0), 0)
     return { total, count: rows.length }
   },

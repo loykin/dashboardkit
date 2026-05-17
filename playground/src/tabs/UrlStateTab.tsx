@@ -3,6 +3,7 @@ import {
   createDashboardEngine,
   definePanel,
   defineVariableType,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 import { DashboardGrid, useLoadDashboard, useVariable } from '@loykin/dashboardkit/react'
@@ -21,9 +22,9 @@ const tablePanel = definePanel({
   name: 'URL Table',
   optionsSchema: {},
   transform(results: QueryResult[]) {
-    const result = results[0] ?? { columns: [], rows: [] }
-    return result.rows.map((row) =>
-      Object.fromEntries(result.columns.map((column, index) => [column.name, row[index]])),
+    const table = results[0] ? queryResultToTableRows(results[0]) : { columns: [], rows: [] }
+    return table.rows.map((row) =>
+      Object.fromEntries(table.columns.map((column, index) => [column.name, row[index]])),
     )
   },
 })

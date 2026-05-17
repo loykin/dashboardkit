@@ -3,6 +3,7 @@ import {
   createDashboardEngine,
   definePanel,
   exportToCsv,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import { useLoadDashboard, usePanel } from '@loykin/dashboardkit/react'
 import { defineDatasource } from '@/lib/datasource-adapter'
@@ -46,7 +47,7 @@ const statPanel = definePanel({
   name: 'Stat',
   optionsSchema: {},
   transform(results) {
-    const rows = results[0]?.rows ?? []
+    const rows = results[0] ? queryResultToTableRows(results[0]).rows : []
     const errors = rows.reduce((s, r) => s + Number(r[1]), 0)
     const total = rows.reduce((s, r) => s + Number(r[2]), 0)
     return total > 0 ? ((errors / total) * 100).toFixed(2) + '%' : '—'
@@ -58,7 +59,7 @@ const tablePanel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {},
-  transform(results) { return results[0]?.rows ?? [] },
+  transform(results) { return results[0] ? queryResultToTableRows(results[0]).rows : [] },
 })
 
 const engine = createDashboardEngine({

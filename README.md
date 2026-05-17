@@ -59,7 +59,7 @@ separately.
 
 ```ts
 import { createDashboardEngine } from '@loykin/dashboardkit'
-import { createDatasourceExecutor } from '@loykin/datasourcekit'
+import { createDatasourceManager } from '@loykin/datasourcekit'
 import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 ```
@@ -86,6 +86,8 @@ import {
   builtinVariableTypes,
   defineDatasource,
   definePanel,
+  queryResultToTableRows,
+  tableRowsToQueryResult,
 } from '@loykin/dashboardkit'
 import {
   DashboardGrid,
@@ -103,7 +105,6 @@ const myDatasource = defineDatasource({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query, variables, timeRange }),
     })
-    // Must return { columns: [{name, type}], rows: unknown[][] }
     return res.json()
   },
 })
@@ -115,13 +116,13 @@ const tablePanel = definePanel({
   optionsSchema: {},
   transform(results) {
     // results is QueryResult[]. Return whatever shape your component needs.
-    return results[0]?.rows ?? []
+    return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
 })
 
 // 3. Create the engine — pass builtinVariableTypes to enable query/custom/textbox variables
 const engine = createDashboardEngine({
-  datasourcePlugins: [myDatasource],
+  datasourceAdapter: myDatasource,
   panels: [tablePanel],
   variableTypes: builtinVariableTypes,
 })
@@ -247,10 +248,10 @@ const datasource = defineDatasource<MyOptions, MyQuery>({
     // DashboardKit does NOT interpolate queries — the datasource decides how
     // to use the raw query descriptor + resolved variables.
     const { variables, timeRange, datasourceOptions } = context
-    return {
+    return tableRowsToQueryResult({
       columns: [{ name: 'ts', type: 'time' }, { name: 'value', type: 'number' }],
       rows: [[1704067200000, 42]],
-    }
+    })
   },
 
   // Optional: streaming alternative to queryData()
@@ -271,38 +272,28 @@ const datasource = defineDatasource<MyOptions, MyQuery>({
 })
 ```
 
-Standalone DatasourceKit plugins use `queryData(request, context)` and do not
-require `dashboardId`, `panelId`, or `requestId`:
+Standalone DatasourceKit managers do not require `dashboardId`, `panelId`, or
+`requestId`:
 
 ```ts
-import { createDatasourceExecutor, defineDatasource } from '@loykin/datasourcekit'
+import { createDatasourceManager, defineDatasourcePlugin } from '@loykin/datasourcekit'
 
-const datasource = defineDatasource({
-  uid: 'main-api',
+const backendPlugin = defineDatasourcePlugin({
   type: 'backend',
-  options: { baseUrl: '/api' },
-
-  async queryData(request, context) {
-    const res = await fetch(`${context.datasourceOptions.baseUrl}/query`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        query: request.query,
-        options: request.options,
-        variables: context.variables,
-        timeRange: context.timeRange,
-      }),
-      signal: context.signal,
-    })
-    return res.json()
-  },
+  name: 'Backend API',
 })
 
-const executor = createDatasourceExecutor({ datasources: [datasource] })
-const result = await executor.query(
-  { id: 'preview', datasourceUid: 'main-api', query: 'orders.list' },
-  { variables: { country: 'KR' }, meta: { source: 'query-preview' } },
-)
+const manager = createDatasourceManager({
+  plugins: [backendPlugin],
+  backend: appDatasourceBackend,
+})
+
+const result = await manager.instances.query({
+  id: 'preview',
+  datasourceUid: 'main-api',
+  datasourceType: 'backend',
+  query: 'orders.list',
+})
 ```
 
 `queryData()` receives:
@@ -331,8 +322,20 @@ Return value must be `QueryResult`:
 
 ```ts
 interface QueryResult {
-  columns: Array<{ name: string; type: string }>
-  rows: unknown[][]
+  frames: Array<{
+    name?: string
+    frameType: string
+    fields: Array<{
+      name: string
+      type?: string
+      labels?: Record<string, string>
+      values: unknown[]
+      meta?: Record<string, unknown>
+    }>
+    meta?: Record<string, unknown>
+  }>
+  stats?: QueryStats
+  inspect?: QueryInspect
   meta?: Record<string, unknown>
 }
 ```
@@ -340,7 +343,7 @@ interface QueryResult {
 ## Panel Plugin
 
 ```ts
-import { definePanel, applyOptionDefaults } from '@loykin/dashboardkit'
+import { definePanel, applyOptionDefaults, queryResultToTableRows } from '@loykin/dashboardkit'
 
 const statPanel = definePanel({
   id: 'stat',
@@ -355,7 +358,8 @@ const statPanel = definePanel({
   },
   transform(results: QueryResult[]) {
     // results[0] is the first dataRequest result
-    return results[0]?.rows.at(-1)?.[0] ?? null
+    const rows = results[0] ? queryResultToTableRows(results[0]).rows : []
+    return rows.at(-1)?.[0] ?? null
   },
 })
 
@@ -421,7 +425,7 @@ import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state
 
 const stateStore = createBrowserDashboardStateStore()
 
-const engine = createDashboardEngine({ stateStore, datasourcePlugins, panels, variableTypes })
+const engine = createDashboardEngine({ stateStore, datasourceAdapter, panels, variableTypes })
 
 // Load with preserved variable values from URL
 engine.load(config, { statePolicy: 'preserve' })

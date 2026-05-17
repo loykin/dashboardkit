@@ -1,4 +1,4 @@
-import { definePanel } from '@loykin/dashboardkit'
+import { definePanel, queryResultToTableRows } from '@loykin/dashboardkit'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
 import type { QueryResult, VariableOption } from '@loykin/dashboardkit'
 
@@ -41,10 +41,11 @@ export const statPanel = definePanel({
   id: 'stat', name: 'Stat', optionsSchema: {},
   transform: (r: QueryResult[]) => {
     const result = r[0]
-    if (!result?.rows[0]) return null
-    const numIdx = result.columns.findIndex((c) => c.type === 'number')
-    const strIdx = result.columns.findIndex((c) => c.type === 'string')
-    const row = result.rows[0]
+    const table = result ? queryResultToTableRows(result) : { columns: [], rows: [] }
+    if (!table.rows[0]) return null
+    const numIdx = table.columns.findIndex((c) => c.type === 'number')
+    const strIdx = table.columns.findIndex((c) => c.type === 'string')
+    const row = table.rows[0]
     // Always return [number, string] regardless of column order in the datasource
     return [row[numIdx >= 0 ? numIdx : 0], row[strIdx >= 0 ? strIdx : 1]]
   },
@@ -52,12 +53,12 @@ export const statPanel = definePanel({
 
 export const barPanel = definePanel({
   id: 'bar', name: 'Bar Chart', optionsSchema: {},
-  transform: (r: QueryResult[]) => r[0]?.rows ?? [],
+  transform: (r: QueryResult[]) => r[0] ? queryResultToTableRows(r[0]).rows : [],
 })
 
 export const tablePanel = definePanel({
   id: 'table', name: 'Table', optionsSchema: {},
-  transform: (r: QueryResult[]) => r[0]?.rows ?? [],
+  transform: (r: QueryResult[]) => r[0] ? queryResultToTableRows(r[0]).rows : [],
 })
 
 export const PANEL_TYPES = ['stat', 'bar', 'table'] as const

@@ -8,6 +8,7 @@ import {
   definePanel,
   defineVariableType,
   createMemoryDashboardStateStore,
+  queryResultToTableRows,
 } from '@loykin/dashboardkit'
 import type {
   DashboardInput,
@@ -937,7 +938,7 @@ test('previewDataRequest runs one request without mutating panel state', async (
     { variablesOverride: { env: 'staging' } },
   )
 
-  assert.deepEqual(result.rows, [[2]])
+  assert.deepEqual(queryResultToTableRows(result).rows, [[2]])
   assert.equal(calls, 2)
   assert.equal(lastOptions?.panelId, '')
   assert.equal(lastOptions?.requestId, 'preview')
