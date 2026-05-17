@@ -8,9 +8,11 @@ import {
 
 export type TransformCalc = 'sum' | 'avg' | 'min' | 'max' | 'count' | 'first' | 'last'
 export type FilterOp = '>' | '<' | '>=' | '<=' | '==' | '!=' | 'contains' | 'startsWith'
+export type JoinMode = 'inner' | 'left' | 'outer'
 
 export type BuiltinTransformConfig =
   | { type: 'merge'; by?: string }
+  | { type: 'joinByField'; field: string; mode?: JoinMode }
   | { type: 'groupBy'; by: string; calc: TransformCalc }
   | { type: 'calculate'; alias: string; expr: string }
   | { type: 'sortBy'; field: string; order?: 'asc' | 'desc' }
@@ -32,6 +34,26 @@ type ColDef = { name: string; type?: string }
 
 function colIdx(columns: ColDef[], name: string): number {
   return columns.findIndex((c) => c.name === name)
+}
+
+function uniqueColumnName(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base)
+    return base
+  }
+
+  let i = 2
+  while (used.has(`${base} ${i}`)) i++
+  const name = `${base} ${i}`
+  used.add(name)
+  return name
+}
+
+function cartesianProduct<T>(groups: T[][]): T[][] {
+  return groups.reduce<T[][]>(
+    (acc, group) => acc.flatMap((prefix) => group.map((item) => [...prefix, item])),
+    [[]],
+  )
 }
 
 function resolveToken(token: string, row: unknown[], columns: ColDef[]): number | null {
@@ -106,6 +128,91 @@ function applyMerge(results: QueryResult[], by?: string): QueryResult[] {
     }
   }
   return [tableRowsToQueryResult({ columns: allColumns, rows: [...keyed.values()] })]
+}
+
+function applyJoinByField(
+  results: QueryResult[],
+  field: string,
+  mode: JoinMode = 'outer',
+): QueryResult[] {
+  if (results.length <= 1) return results
+
+  const tables = results.map(queryResultToTableRows)
+  const keyIndices = tables.map((table) => colIdx(table.columns, field))
+  if (keyIndices.some((idx) => idx === -1)) return results
+
+  const usedNames = new Set<string>([field])
+  const outputColumns: ColDef[] = [
+    tables[0]?.columns[keyIndices[0]!] ?? { name: field },
+  ]
+  const valueColumnsByTable = tables.map((table, tableIndex) =>
+    table.columns
+      .map((column, columnIndex) => ({ column, columnIndex }))
+      .filter(({ columnIndex }) => columnIndex !== keyIndices[tableIndex])
+      .map(({ column }) => ({
+        source: column,
+        output: {
+          ...column,
+          name: uniqueColumnName(column.name, usedNames),
+        },
+      })),
+  )
+  for (const columns of valueColumnsByTable) {
+    for (const column of columns) outputColumns.push(column.output)
+  }
+
+  const rowsByTable = tables.map((table, tableIndex) => {
+    const keyIndex = keyIndices[tableIndex]!
+    const rowsByKey = new Map<unknown, unknown[][]>()
+    for (const row of table.rows) {
+      const key = row[keyIndex]
+      const current = rowsByKey.get(key) ?? []
+      current.push(row)
+      rowsByKey.set(key, current)
+    }
+    return rowsByKey
+  })
+
+  const keys: unknown[] = []
+  const seenKeys = new Set<unknown>()
+  const pushKey = (key: unknown) => {
+    if (seenKeys.has(key)) return
+    seenKeys.add(key)
+    keys.push(key)
+  }
+
+  if (mode === 'left' || mode === 'inner') {
+    for (const key of rowsByTable[0]?.keys() ?? []) pushKey(key)
+  } else {
+    for (const rowsByKey of rowsByTable) {
+      for (const key of rowsByKey.keys()) pushKey(key)
+    }
+  }
+
+  const outputRows: unknown[][] = []
+  for (const key of keys) {
+    if (mode === 'inner' && rowsByTable.some((rowsByKey) => !rowsByKey.has(key))) continue
+
+    const rowGroups = rowsByTable.map((rowsByKey, tableIndex) => {
+      const rows = rowsByKey.get(key)
+      if (rows) return rows
+      const columnCount = tables[tableIndex]?.columns.length ?? 0
+      const nullRow = new Array<unknown>(columnCount).fill(null)
+      nullRow[keyIndices[tableIndex]!] = key
+      return [nullRow]
+    })
+
+    for (const combination of cartesianProduct(rowGroups)) {
+      outputRows.push([
+        key,
+        ...combination.flatMap((row, tableIndex) =>
+          valueColumnsByTable[tableIndex]!.map(({ source }) => row[colIdx(tables[tableIndex]!.columns, source.name)]),
+        ),
+      ])
+    }
+  }
+
+  return [tableRowsToQueryResult({ columns: outputColumns, rows: outputRows })]
 }
 
 function applyGroupBy(results: QueryResult[], by: string, calc: TransformCalc): QueryResult[] {
@@ -237,6 +344,11 @@ export function applyTransforms(
       case 'merge':
         current = applyMerge(current, (t as { by?: string }).by)
         break
+      case 'joinByField': {
+        const cfg = t as { field: string; mode?: JoinMode }
+        current = applyJoinByField(current, cfg.field, cfg.mode)
+        break
+      }
       case 'groupBy': {
         const cfg = t as { by: string; calc: TransformCalc }
         current = applyGroupBy(current, cfg.by, cfg.calc)

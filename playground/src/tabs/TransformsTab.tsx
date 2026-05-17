@@ -40,13 +40,13 @@ const RAW: QueryResult[] = [
   }),
 ]
 
-type Step = 'raw' | 'merge' | 'groupBy' | 'calculate' | 'sortBy' | 'filterByValue' | 'rename'
+type Step = 'raw' | 'joinByField' | 'groupBy' | 'calculate' | 'sortBy' | 'filterByValue' | 'rename'
 
-const STEPS: Step[] = ['raw', 'merge', 'groupBy', 'calculate', 'sortBy', 'filterByValue', 'rename']
+const STEPS: Step[] = ['raw', 'joinByField', 'groupBy', 'calculate', 'sortBy', 'filterByValue', 'rename']
 
 const STEP_LABELS: Record<Step, string> = {
   raw: 'raw (2 results)',
-  merge: 'merge (by host)',
+  joinByField: 'joinByField host · outer',
   groupBy: 'groupBy host · sum',
   calculate: 'calculate error_rate',
   sortBy: 'sortBy error_rate ↓',
@@ -56,7 +56,7 @@ const STEP_LABELS: Record<Step, string> = {
 
 const STEP_CODE: Record<Step, string> = {
   raw: '// raw QueryResult[] from two datasource requests',
-  merge: "{ type: 'merge', by: 'host' }",
+  joinByField: "{ type: 'joinByField', field: 'host', mode: 'outer' }",
   groupBy: "{ type: 'groupBy', by: 'host', calc: 'sum' }",
   calculate: "{ type: 'calculate', alias: 'error_rate', expr: 'errors / total' }",
   sortBy: "{ type: 'sortBy', field: 'error_rate', order: 'desc' }",
@@ -69,7 +69,7 @@ function applyUpTo(target: Step): QueryResult[] {
   if (idx === 0) return RAW
   type T = Parameters<typeof applyTransforms>[1][number]
   const transforms: T[] = []
-  if (idx >= 1) transforms.push({ type: 'merge', by: 'host' })
+  if (idx >= 1) transforms.push({ type: 'joinByField', field: 'host', mode: 'outer' })
   if (idx >= 2) transforms.push({ type: 'groupBy', by: 'host', calc: 'sum' })
   if (idx >= 3) transforms.push({ type: 'calculate', alias: 'error_rate', expr: 'errors / total' })
   if (idx >= 4) transforms.push({ type: 'sortBy', field: 'error_rate', order: 'desc' })
