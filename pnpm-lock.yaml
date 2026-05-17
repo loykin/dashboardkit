@@ -18,6 +18,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.4
         version: 9.39.4
+      '@loykin/datasourcekit':
+        specifier: workspace:*
+        version: link:packages/datasourcekit
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17
@@ -60,6 +63,8 @@ importers:
       typescript-eslint:
         specifier: ^8.58.2
         version: 8.59.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
+
+  packages/datasourcekit: {}
 
   playground:
     dependencies:

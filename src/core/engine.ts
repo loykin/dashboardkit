@@ -554,7 +554,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
 
   function effectiveCacheTtlMs(request: DataRequestConfig): number | undefined {
     if (request.cacheTtlMs !== undefined) return request.cacheTtlMs
-    return datasourceAdapter.getCacheTtlMs?.(request, buildDatasourceOperationContext())
+    return datasourceAdapter.cacheTtlMs
   }
 
   function readPanelCache(
@@ -597,7 +597,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     cfg: DashboardConfig,
     panelId: string,
     requestId: string,
-    instance: PanelRuntimeInstance,
     variables: Record<string, string | string[]>,
     tr: { from: string; to: string } | undefined,
     signal: AbortSignal,
@@ -611,9 +610,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
       ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
       signal,
       builtins: varEngine.getBuiltins(),
-      panel: instance.config,
-      panelOptions: instance.config.options,
-      panelInstance: instance,
     }
   }
 
@@ -631,7 +627,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
         const key = cacheKey(panelId, request.id, request.uid, JSON.stringify(request), variables, tr)
         const result = await datasourceAdapter.query(
           request,
-          buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, controller.signal),
+          buildDatasourceContext(cfg, panelId, request.id, variables, tr, controller.signal),
         )
         assertCurrentPanelRequest(panelId, controller)
         setCache(key, { panelId, requestId: request.id, datasourceUid: request.uid, value: result })
@@ -665,7 +661,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
       streamControllers.push(controller)
       const unsub = datasourceAdapter.subscribe?.(
         request,
-        buildDatasourceContext(cfg, panelId, request.id, instance, variables, tr, controller.signal),
+        buildDatasourceContext(cfg, panelId, request.id, variables, tr, controller.signal),
         (result) => {
           latestResults[i] = { ...result, requestId: request.id }
           if (latestResults.some((r) => r === null)) return
@@ -1319,8 +1315,6 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
         ...(tr !== undefined ? { timeRange: resolveTimeRange(tr) } : {}),
         signal: controller.signal,
         builtins: explicitBuiltins ?? varEngine.getBuiltins(),
-        ...(panelConfig ? { panel: panelConfig, panelOptions: panelConfig.options } : {}),
-        ...(panelInstance ? { panelInstance } : {}),
       })
       return { ...result, requestId: parsedRequest.id }
     },

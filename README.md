@@ -39,13 +39,6 @@ a database, manage datasource credentials, or dictate your UI design.
 pnpm add @loykin/dashboardkit
 ```
 
-Install DatasourceKit directly when a runtime needs datasource execution without
-DashboardKit:
-
-```bash
-pnpm add @loykin/datasourcekit
-```
-
 React rendering helpers are optional but require these peer dependencies:
 
 ```bash
@@ -59,7 +52,6 @@ separately.
 
 ```ts
 import { createDashboardEngine } from '@loykin/dashboardkit'
-import { createDatasourceManager } from '@loykin/datasourcekit'
 import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
 ```
@@ -84,34 +76,32 @@ app-specific router params.
 import {
   createDashboardEngine,
   builtinVariableTypes,
-  defineDatasource,
   definePanel,
   queryResultToTableRows,
   tableRowsToQueryResult,
 } from '@loykin/dashboardkit'
+import type { DashboardDatasourceAdapter } from '@loykin/dashboardkit'
 import {
   DashboardGrid,
   useLoadDashboard,
   usePanel,
 } from '@loykin/dashboardkit/react'
 
-// 1. Define a datasource adapter
-const myDatasource = defineDatasource({
-  uid: 'main-api',
-  type: 'backend',
-  async queryData(request, { variables, timeRange }) {
+// 1. Implement a datasource adapter
+const myDatasource: DashboardDatasourceAdapter = {
+  async query(request, context) {
     const res = await fetch('/api/query', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query: request.query, variables, timeRange }),
+      body: JSON.stringify({
+        query: request.query,
+        variables: context.variables,
+        timeRange: context.timeRange,
+      }),
     })
-    const body = await res.json() as {
-      columns: { name: string; type?: string }[]
-      rows: unknown[][]
-    }
-    return tableRowsToQueryResult(body)
+    return tableRowsToQueryResult(await res.json())
   },
-})
+}
 
 // 2. Define a panel plugin
 const tablePanel = definePanel({
@@ -232,106 +222,91 @@ engine.load(saved, { statePolicy: 'preserve' }) // keeps variable selections
 
 ## Datasource Adapter
 
-DashboardKit queries a single `DashboardDatasourceAdapter`. The
-`defineDatasource()` helper below is a small convenience for simple single
-datasource demos; larger apps can provide their own adapter that proxies to
-DatasourceKit, an API server, mocks, or any other execution layer.
+DashboardKit queries data through a single `DashboardDatasourceAdapter`
+interface. The engine has no built-in notion of individual datasource plugins —
+you provide one object that implements the adapter, and the engine calls it for
+every panel query, variable query, and annotation query.
 
-DashboardKit datasource adapters receive dashboard execution context because
-the engine is orchestrating panel queries. Use `@loykin/datasourcekit` directly
-for dashboard-independent alert, report, schema browser, query preview, or
-backend job execution.
+This makes it straightforward to connect any execution layer: a direct fetch, a
+datasource manager package (such as a future `@loykin/datasourcekit`), a mock,
+or a proxy to a backend API.
 
 Datasources are optional. A dashboard can render static, derived, embedded, or
 app-owned panels without configuring any datasource adapter as long as those
 panels do not declare `dataRequests[]`.
 
 ```ts
-import { defineDatasource, tableRowsToQueryResult } from '@loykin/dashboardkit'
+import { tableRowsToQueryResult } from '@loykin/dashboardkit'
+import type { DashboardDatasourceAdapter } from '@loykin/dashboardkit'
 
-const datasource = defineDatasource<MyOptions, MyQuery>({
-  uid: 'my-ds',
-  type: 'my-type',
-  options: { baseUrl: '/api' },
-  cacheTtlMs: 30_000, // optional default cache TTL
-
-  async queryData(request, context) {
-    // DashboardKit does NOT interpolate queries — the datasource decides how
-    // to use the raw query descriptor + resolved variables.
-    const { variables, timeRange, datasourceOptions } = context
-    return tableRowsToQueryResult({
-      columns: [{ name: 'ts', type: 'time' }, { name: 'value', type: 'number' }],
-      rows: [[1704067200000, 42]],
+const adapter: DashboardDatasourceAdapter = {
+  // Required: called for every panel data request
+  async query(request, context) {
+    // DashboardKit does NOT interpolate queries — decide here how to use
+    // the raw query descriptor and resolved variables.
+    const { variables, timeRange, signal } = context
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: request.query, variables, timeRange }),
     })
+    return tableRowsToQueryResult(await res.json())
   },
 
-  // Optional: streaming alternative to queryData()
-  subscribeData(request, context, onData, onError) {
-    const ws = openWebSocket(request, context)
+  // Optional: streaming alternative — return an unsubscribe function
+  subscribe(request, context, onData, onError) {
+    const ws = openWebSocket(request.query, context)
     ws.onmessage = (e) => onData(JSON.parse(e.data))
     ws.onerror = (e) => onError(new Error(String(e)))
-    return () => ws.close() // must return unsubscribe function
+    return () => ws.close()
   },
 
-  // Optional: used by `query`-type variables
-  variable: {
-    async metricFindQuery(query, context) {
-      const items = await fetch(`/api/lookup?q=${query}`).then((r) => r.json())
-      return items.map((v: string) => ({ label: v, value: v }))
-    },
+  // Optional: called for `query`-type variables
+  async metricFindQuery(request, context) {
+    const items = await fetch(`/api/lookup?q=${request.query}&env=${context.variables['env']}`).then((r) => r.json())
+    return items.map((v: string) => ({ label: v, value: v }))
   },
-})
-```
-
-Standalone DatasourceKit managers do not require `dashboardId`, `panelId`, or
-`requestId`:
-
-```ts
-import { createDatasourceManager, defineDatasourcePlugin } from '@loykin/datasourcekit'
-
-const backendPlugin = defineDatasourcePlugin({
-  type: 'backend',
-  name: 'Backend API',
-})
-
-const manager = createDatasourceManager({
-  plugins: [backendPlugin],
-  backend: appDatasourceBackend,
-})
-
-const result = await manager.instances.query({
-  id: 'preview',
-  datasourceUid: 'main-api',
-  datasourceType: 'backend',
-  query: 'orders.list',
-})
-```
-
-`queryData()` receives:
-
-```ts
-interface DataQuery<TQuery> {
-  id: string
-  datasourceUid: string
-  datasourceType?: string
-  query?: TQuery           // dataRequest.query (raw)
-  options?: Record<string, unknown>
 }
+```
 
-interface DashboardDatasourceQueryContext<TOptions> {
+`query()` and all other methods receive a `DashboardDatasourceContext`:
+
+```ts
+interface DashboardDatasourceContext {
   variables: Record<string, string | string[]>
-  timeRange?: { from: string; to: string }
-  datasourceOptions: TOptions
+  timeRange?: { from: string; to: string; raw?: { from: string; to: string } }
+  authContext?: AuthContext
   signal?: AbortSignal
-  dashboardId: string
-  panelId: string
-  requestId: string
+  builtins?: Record<string, string>
+  // set when called from a panel query
+  dashboardId?: string
+  panelId?: string
+  requestId?: string
+  panel?: PanelConfig
+  panelOptions?: Record<string, unknown>
 }
 ```
 
-Return value must be `QueryResult`. DashboardKit uses the same frame-oriented
-shape as DatasourceKit: each frame is a named table/series with typed fields and
-columnar values.
+For multi-datasource routing, implement the dispatch yourself:
+
+```ts
+const adapters = new Map([
+  ['prometheus', prometheusAdapter],
+  ['postgres', postgresAdapter],
+])
+
+const adapter: DashboardDatasourceAdapter = {
+  query(request, context) {
+    const ds = adapters.get(request.uid)
+    if (!ds) return Promise.reject(new Error(`datasource "${request.uid}" not found`))
+    return ds.query(request, context)
+  },
+}
+```
+
+Return value must be `QueryResult` — the frame-oriented shape where each frame
+is a named table or series with typed fields and columnar values.
 
 ```ts
 interface QueryResult {
@@ -640,11 +615,10 @@ substitution.
 
 ```ts
 import { interpolate } from '@loykin/dashboardkit'
+import type { DashboardDatasourceAdapter } from '@loykin/dashboardkit'
 
-const datasource = defineDatasource({
-  uid: 'postgres',
-  type: 'postgres',
-  async queryData(request, context) {
+const postgresAdapter: DashboardDatasourceAdapter = {
+  async query(request, context) {
     const sql = interpolate(String(request.query), {
       variables: context.variables,
       builtins: {
@@ -660,7 +634,7 @@ const datasource = defineDatasource({
     })
     return runQuery(sql)
   },
-})
+}
 ```
 
 Built-in format specifiers: `csv`, `pipe`, `json`, `sqlstring`, `sqlin`,

@@ -944,11 +944,10 @@ test('previewDataRequest runs one request without mutating panel state', async (
   assert.equal(lastOptions?.requestId, 'preview')
   assert.equal(lastRequest?.query, 'preview')
   assert.deepEqual(lastOptions?.variables, { env: 'staging' })
-  assert.equal(lastOptions?.panel, undefined)
   assert.equal(engine.getPanel('p1'), before)
 })
 
-test('previewDataRequest includes panel context when panelId is provided', async () => {
+test('previewDataRequest sets panelId in context when panelId is provided', async () => {
   let lastOptions: DashboardDatasourceQueryContext | undefined
   const datasource = defineDatasource({
     uid: 'ds',
@@ -983,9 +982,6 @@ test('previewDataRequest includes panel context when panelId is provided', async
   )
 
   assert.equal(lastOptions?.panelId, 'p1')
-  assert.equal(lastOptions?.panel?.id, 'p1')
-  assert.deepEqual(lastOptions?.panelOptions, { color: 'red' })
-  assert.equal(lastOptions?.panelInstance?.id, 'p1')
 })
 
 test('previewDataRequest auth denial rejects without calling datasource', async () => {

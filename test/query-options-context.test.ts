@@ -49,7 +49,7 @@ function config(): DashboardInput {
   }
 }
 
-test('datasource query options include runtime panel context and builtins', async () => {
+test('datasource query options include panelId, variables, and builtins', async () => {
   const seen: DashboardDatasourceQueryContext[] = []
   const datasource = defineDatasource({
     uid: 'ds',
@@ -73,11 +73,6 @@ test('datasource query options include runtime panel context and builtins', asyn
   const options = seen.at(-1)
 
   assert.equal(options?.panelId, 'cpu__repeat__1')
-  assert.equal(options?.panel?.id, 'cpu')
-  assert.deepEqual(options?.panelOptions, { unit: 'percent' })
-  assert.equal(options?.panelInstance?.id, 'cpu__repeat__1')
-  assert.equal(options?.panelInstance?.originId, 'cpu')
-  assert.equal(options?.panelInstance?.repeat?.value, 'api-2')
   assert.deepEqual(options?.variables, { host: 'api-2' })
   assert.equal(options?.builtins?.['dashboard'], 'Runtime Context')
   assert.equal(options?.builtins?.['fromISO'], '2026-04-30T00:00:00.000Z')

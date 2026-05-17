@@ -18,7 +18,8 @@
       "@loykin/dashboardkit/react": ["src/react.ts"],
       "@loykin/dashboardkit/url-state": ["src/adapters/url-state.ts"],
       "@loykin/dashboardkit/variables": ["src/variables-entrypoint.ts"],
-      "@loykin/dashboardkit/addons": ["src/addons-entrypoint.ts"]
+      "@loykin/dashboardkit/addons": ["src/addons-entrypoint.ts"],
+      "@loykin/datasourcekit": ["packages/datasourcekit/src/index.ts"]
     }
   },
   "include": ["src", "test"]
