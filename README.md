@@ -80,11 +80,10 @@ import {
   queryResultToTableRows,
   tableRowsToQueryResult,
 } from '@loykin/dashboardkit'
-import type { DashboardDatasourceAdapter } from '@loykin/dashboardkit'
+import type { DashboardDatasourceAdapter, PanelViewerProps } from '@loykin/dashboardkit'
 import {
   DashboardGrid,
   useLoadDashboard,
-  usePanel,
 } from '@loykin/dashboardkit/react'
 
 // 1. Implement a datasource adapter
@@ -103,18 +102,22 @@ const myDatasource: DashboardDatasourceAdapter = {
   },
 }
 
-// 2. Define a panel plugin
+// 2. Define a panel plugin — transform + viewer in one place
 const tablePanel = definePanel({
   id: 'table',
   name: 'Table',
   optionsSchema: {},
   transform(results) {
-    // results is QueryResult[]. Return whatever shape your component needs.
     return results[0] ? queryResultToTableRows(results[0]).rows : []
+  },
+  viewer({ data, loading, error }: PanelViewerProps<unknown, unknown[][]>) {
+    if (loading) return <div>Loading…</div>
+    if (error)   return <div>{error}</div>
+    return <pre>{JSON.stringify(data, null, 2)}</pre>
   },
 })
 
-// 3. Create the engine — pass builtinVariableTypes to enable query/custom/textbox variables
+// 3. Create the engine
 const engine = createDashboardEngine({
   datasourceAdapter: myDatasource,
   panels: [tablePanel],
@@ -141,29 +144,30 @@ const dashboard = {
       title: 'Orders',
       gridPos: { x: 0, y: 0, w: 12, h: 8 },
       dataRequests: [
-        // Include "$country" in options so the engine detects the variable dependency
         { id: 'main', uid: 'main-api', type: 'backend', query: 'orders.list', options: { country: '$country' } },
       ],
     },
   ],
 }
 
-// 5. Render
+// 5. Render — generic renderer looks up the registered viewer by panel type
 function DashboardPage() {
   useLoadDashboard(engine, dashboard)
 
   return (
     <DashboardGrid engine={engine}>
-      {(props) => <TablePanel panelId={props.panelId} />}
+      {({ panelType, data, loading, error, options, config, rawData, ref }) => {
+        const Viewer = engine.getPanelPlugin(panelType)?.viewer
+        return (
+          <div ref={ref as React.Ref<HTMLDivElement>} style={{ height: '100%' }}>
+            {Viewer
+              ? <Viewer data={data} loading={loading} error={error} options={options} panel={config} variables={{}} width={0} height={0} rawData={rawData} />
+              : <div>Unknown panel: {panelType}</div>}
+          </div>
+        )
+      }}
     </DashboardGrid>
   )
-}
-
-function TablePanel({ panelId }: { panelId: string }) {
-  const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
-  if (loading) return <div>Loading…</div>
-  if (error)   return <div>{error}</div>
-  return <pre>{JSON.stringify(data, null, 2)}</pre>
 }
 ```
 
@@ -332,8 +336,11 @@ tables at their boundary.
 
 ## Panel Plugin
 
-```ts
+```tsx
 import { definePanel, applyOptionDefaults, queryResultToTableRows } from '@loykin/dashboardkit'
+import type { PanelViewerProps } from '@loykin/dashboardkit/react'
+
+interface StatOptions { unit: string; threshold: number; color: string }
 
 const statPanel = definePanel({
   id: 'stat',
@@ -347,15 +354,25 @@ const statPanel = definePanel({
                  choices: [{ label: 'Last', value: 'last' }, { label: 'Sum', value: 'sum' }] },
   },
   transform(results: QueryResult[]) {
-    // results[0] is the first dataRequest result
     const rows = results[0] ? queryResultToTableRows(results[0]).rows : []
     return rows.at(-1)?.[0] ?? null
   },
+  viewer({ data, loading, error, options: rawOptions, panel }: PanelViewerProps<StatOptions, unknown>) {
+    const options = applyOptionDefaults(statPanel.optionsSchema, rawOptions) as StatOptions
+    if (loading) return <div>Loading…</div>
+    if (error)   return <div style={{ color: 'red' }}>{error}</div>
+    return (
+      <div style={{ color: options.color, fontSize: 32, textAlign: 'center' }}>
+        {String(data ?? '—')} {options.unit}
+      </div>
+    )
+  },
 })
-
-// Apply defaults when reading options in your React component
-const options = applyOptionDefaults(statPanel.optionsSchema, panel.options)
 ```
+
+`viewer` is the React component registered for this panel type. The engine
+renders it via `getPanelPlugin(type)?.viewer` — no manual `if (type === 'stat')`
+switch needed. `applyOptionDefaults` fills in missing fields from `optionsSchema`.
 
 Option schema field types: `string`, `number`, `boolean`, `select`,
 `multiselect`, `color`, `json`, `array`. Validation metadata: `required`,

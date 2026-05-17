@@ -12,7 +12,7 @@ import {
   useVariable,
 } from '@loykin/dashboardkit/react'
 import { defineDatasource } from '@/lib/datasource-adapter'
-import type { DashboardInput, PanelPluginDef, QueryResult } from '@loykin/dashboardkit'
+import type { DashboardInput, PanelPluginDef, PanelViewerProps, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 // ─── Mock Datasource ───────────────────────────────────────────────────────────
@@ -137,6 +137,34 @@ const tablePanel = definePanel({
   name: 'Table Panel',
   optionsSchema: {},
   transform: (results) => results[0] ? toRows(results[0]) : [],
+  viewer({ data }: PanelViewerProps<Record<string, unknown>, Record<string, unknown>[] | null>) {
+    if (!data || data.length === 0) return <p className="text-xs text-gray-400">No data</p>
+    const cols = Object.keys(data[0]!)
+    return (
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-gray-50">
+          <tr>
+            {cols.map((c) => (
+              <th key={c} className="px-2 py-1 text-left text-gray-500 font-medium capitalize">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {data.map((row, i) => (
+            <tr key={i} className="hover:bg-gray-50">
+              {cols.map((c) => (
+                <td key={c} className="px-2 py-1.5 text-gray-800">
+                  {String(row[c] ?? '')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  },
 })
 
 const statPanel = definePanel({
@@ -147,6 +175,17 @@ const statPanel = definePanel({
     const rows = results[0] ? toRows(results[0]) : []
     const total = rows.reduce((sum, r) => sum + ((r['amount'] as number) ?? 0), 0)
     return { total, count: rows.length }
+  },
+  viewer({ data }: PanelViewerProps<Record<string, unknown>, { total: number; count: number } | null>) {
+    if (!data) return <p className="text-xs text-gray-400">No data</p>
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-1">
+        <span className="text-3xl font-bold text-gray-900">
+          {data.total.toLocaleString()}
+        </span>
+        <span className="text-xs text-gray-400">{data.count} rows</span>
+      </div>
+    )
   },
 })
 
@@ -251,7 +290,7 @@ const config: DashboardInput = {
 
 // ─── Panel Renderer ───────────────────────────────────────────────────────────
 
-function PanelShell({ panelId, panelType, data, loading, error, ref }: PanelRenderProps) {
+function PanelShell({ panelId, panelType, data, loading, error, options, config: panelConfig, rawData, ref }: PanelRenderProps) {
   const instance = engine.getPanelInstance(panelId)
   const pcfg = instance?.config ?? config.panels.find((p) => p.id === panelId)!
 
@@ -260,6 +299,8 @@ function PanelShell({ panelId, panelType, data, loading, error, ref }: PanelRend
     const v = instance?.variablesOverride?.[name] ?? engine.getVariable(name)?.value
     return Array.isArray(v) ? v.join(', ') : (v as string) ?? `$${name}`
   })
+
+  const Viewer = engine.getPanelPlugin(panelType)?.viewer as ((props: PanelViewerProps<unknown, unknown>) => React.ReactNode) | undefined
 
   return (
     <div
@@ -277,56 +318,11 @@ function PanelShell({ panelId, panelType, data, loading, error, ref }: PanelRend
 
       {/* Panel body */}
       <div className="flex-1 overflow-auto p-3 min-h-0">
-        {error ? (
-          <p className="text-xs text-red-500">{error}</p>
-        ) : panelType === 'stat' ? (
-          <StatBody data={data as { total: number; count: number } | null} />
-        ) : panelType === 'table' ? (
-          <TableBody data={data as Record<string, unknown>[] | null} />
-        ) : null}
+        {Viewer
+          ? <Viewer data={data} loading={loading} error={error} options={options} panel={panelConfig} variables={{}} width={0} height={0} rawData={rawData} />
+          : <p className="text-xs text-gray-400">Unknown panel: {panelType}</p>}
       </div>
     </div>
-  )
-}
-
-function StatBody({ data }: { data: { total: number; count: number } | null }) {
-  if (!data) return <p className="text-xs text-gray-400">No data</p>
-  return (
-    <div className="h-full flex flex-col items-center justify-center gap-1">
-      <span className="text-3xl font-bold text-gray-900">
-        {data.total.toLocaleString()}
-      </span>
-      <span className="text-xs text-gray-400">{data.count} rows</span>
-    </div>
-  )
-}
-
-function TableBody({ data }: { data: Record<string, unknown>[] | null }) {
-  if (!data || data.length === 0) return <p className="text-xs text-gray-400">No data</p>
-  const cols = Object.keys(data[0]!)
-  return (
-    <table className="w-full text-xs">
-      <thead className="sticky top-0 bg-gray-50">
-        <tr>
-          {cols.map((c) => (
-            <th key={c} className="px-2 py-1 text-left text-gray-500 font-medium capitalize">
-              {c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-100">
-        {data.map((row, i) => (
-          <tr key={i} className="hover:bg-gray-50">
-            {cols.map((c) => (
-              <td key={c} className="px-2 py-1.5 text-gray-800">
-                {String(row[c] ?? '')}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }
 

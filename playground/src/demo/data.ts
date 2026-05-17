@@ -1,3 +1,4 @@
+import React from 'react'
 import { definePanel, queryResultToTableRows } from '@loykin/dashboardkit'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
 import type { QueryResult, VariableOption } from '@loykin/dashboardkit'
@@ -49,16 +50,77 @@ export const statPanel = definePanel({
     // Always return [number, string] regardless of column order in the datasource
     return [row[numIdx >= 0 ? numIdx : 0], row[strIdx >= 0 ? strIdx : 1]]
   },
+  viewer({ data, loading, error }) {
+    if (error) return React.createElement('div', { className: 'panel-error' }, error)
+    if (!data && loading) return React.createElement('div', { className: 'panel-loading' }, 'Loading…')
+    if (!data) return React.createElement('div', { className: 'panel-loading' }, 'No data')
+    const row = data as unknown[]
+    return React.createElement(
+      'div', { style: { padding: '12px 14px' } },
+      React.createElement('div', { className: 'stat-value' }, Number(row[0]).toLocaleString()),
+      React.createElement('div', { className: 'stat-sub' }, String(row[1] ?? '')),
+    )
+  },
 })
 
 export const barPanel = definePanel({
   id: 'bar', name: 'Bar Chart', optionsSchema: {},
   transform: (r: QueryResult[]) => r[0] ? queryResultToTableRows(r[0]).rows : [],
+  viewer({ data, loading, error }) {
+    if (error) return React.createElement('div', { className: 'panel-error' }, error)
+    if (!data && loading) return React.createElement('div', { className: 'panel-loading' }, 'Loading…')
+    const rows = Array.isArray(data) ? data as unknown[][] : []
+    const max = Math.max(1, ...rows.map((r) => Number(r[1] ?? 0)))
+    return React.createElement(
+      'div', { style: { padding: '8px 12px', overflowY: 'auto', height: '100%' } },
+      ...rows.map((row) => {
+        const label = String(row[0])
+        const val = Number(row[1] ?? 0)
+        return React.createElement(
+          'div', { key: label, className: 'bar-row' },
+          React.createElement('span', { className: 'bar-label' }, label),
+          React.createElement('div', { className: 'bar-track' },
+            React.createElement('div', { className: 'bar-fill', style: { width: `${(val / max) * 100}%` } }),
+          ),
+          React.createElement('span', { className: 'bar-val' }, val.toLocaleString()),
+        )
+      }),
+    )
+  },
 })
 
 export const tablePanel = definePanel({
   id: 'table', name: 'Table', optionsSchema: {},
   transform: (r: QueryResult[]) => r[0] ? queryResultToTableRows(r[0]).rows : [],
+  viewer({ data, loading, error }) {
+    if (error) return React.createElement('div', { className: 'panel-error' }, error)
+    if (!data && loading) return React.createElement('div', { className: 'panel-loading' }, 'Loading…')
+    const rows = Array.isArray(data) ? data as unknown[][] : []
+    if (rows.length === 0) return React.createElement('div', { className: 'panel-loading' }, 'No data')
+    const headers = rows[0]?.length === 4
+      ? ['Country', 'Platform', 'Quarter', 'Revenue']
+      : ['Dimension', 'Value']
+    return React.createElement(
+      'div', { style: { overflowY: 'auto', height: '100%' } },
+      React.createElement(
+        'table', { className: 'ex-table' },
+        React.createElement('thead', null,
+          React.createElement('tr', null, ...headers.map((h) => React.createElement('th', { key: h }, h))),
+        ),
+        React.createElement('tbody', null,
+          ...rows.map((row, i) =>
+            React.createElement('tr', { key: i },
+              ...row.map((cell, j) =>
+                React.createElement('td', { key: j },
+                  j === 3 ? Number(cell).toLocaleString() : String(cell),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    )
+  },
 })
 
 export const PANEL_TYPES = ['stat', 'bar', 'table'] as const

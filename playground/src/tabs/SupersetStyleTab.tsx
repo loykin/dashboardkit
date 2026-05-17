@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   createCrossFilterAddon,
   createDashboardEngine,
@@ -8,8 +8,16 @@ import {
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useEngineEvent, useLoadDashboard, usePanelDraftEditor } from '@loykin/dashboardkit/react'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
-import type { CoreEngineAPI, DashboardInput, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, PanelViewerProps, PluginComponent, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
+
+// Local engine context so viewers can access engine for cross-filter
+const SupersetEngineCtx = createContext<CoreEngineAPI | null>(null)
+function useSupsetEngine() {
+  const e = useContext(SupersetEngineCtx)
+  if (!e) throw new Error('useSupsetEngine must be inside SupersetEngineCtx.Provider')
+  return e
+}
 
 const salesRows = [
   ['KR', 'platform', 128],
@@ -19,6 +27,37 @@ const salesRows = [
   ['JP', 'platform', 83],
   ['JP', 'search', 57],
 ]
+
+function BarViewer({ data, options, panel }: PanelViewerProps<Record<string, unknown>, unknown[][]>) {
+  const engine = useSupsetEngine()
+  const rows = Array.isArray(data) ? data as unknown[][] : []
+  const dimension = String(options.dimension ?? 'country')
+  const max = Math.max(1, ...rows.map((row) => Number(row[1] ?? 0)))
+  return (
+    <div className="h-full rounded border border-gray-200 bg-white p-3">
+      <div className="mb-3 text-sm font-semibold">{panel.title}</div>
+      <div className="space-y-2">
+        {rows.map((row) => {
+          const label = String(row[0])
+          const value = Number(row[1] ?? 0)
+          return (
+            <button
+              key={label}
+              className="grid w-full grid-cols-[72px_1fr_40px] items-center gap-2 text-left text-xs"
+              onClick={() => createCrossFilterAddon(engine).setPanelSelection(panel.id, { [dimension]: label })}
+            >
+              <span className="font-medium text-gray-600">{label}</span>
+              <span className="h-5 rounded bg-blue-100">
+                <span className="block h-5 rounded bg-blue-500" style={{ width: `${(value / max) * 100}%` }} />
+              </span>
+              <span className="text-right tabular-nums">{value}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 const chartPanel = definePanel({
   id: 'bar',
@@ -30,6 +69,7 @@ const chartPanel = definePanel({
   transform(results: QueryResult[]) {
     return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
+  viewer: BarViewer as PluginComponent<PanelViewerProps<Record<string, unknown>, unknown>>,
 })
 
 const tablePanel = definePanel({
@@ -38,6 +78,23 @@ const tablePanel = definePanel({
   optionsSchema: {},
   transform(results: QueryResult[]) {
     return results[0] ? queryResultToTableRows(results[0]).rows : []
+  },
+  viewer({ data, panel }: PanelViewerProps<Record<string, unknown>, unknown[][]>) {
+    const rows = Array.isArray(data) ? data as unknown[][] : []
+    return (
+      <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-3 py-2 text-sm font-semibold">{panel.title}</div>
+        <table className="w-full text-left text-xs">
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index} className="border-b border-gray-100">
+                {row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2">{String(cell)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
   },
 })
 
@@ -138,57 +195,12 @@ function SelectionState({ engine }: { engine: CoreEngineAPI }) {
   )
 }
 
-function BarPanel({ engine, props }: { engine: CoreEngineAPI; props: PanelRenderProps }) {
-  const rows = Array.isArray(props.data) ? props.data as unknown[][] : []
-  const dimension = String(props.config.options.dimension)
-  const max = Math.max(1, ...rows.map((row) => Number(row[1] ?? 0)))
-
-  return (
-    <div className="h-full rounded border border-gray-200 bg-white p-3">
-      <div className="mb-3 text-sm font-semibold">{props.config.title}</div>
-      <div className="space-y-2">
-        {rows.map((row) => {
-          const label = String(row[0])
-          const value = Number(row[1] ?? 0)
-          return (
-            <button
-              key={label}
-              className="grid w-full grid-cols-[72px_1fr_40px] items-center gap-2 text-left text-xs"
-              onClick={() => createCrossFilterAddon(engine).setPanelSelection(props.panelId, { [dimension]: label })}
-            >
-              <span className="font-medium text-gray-600">{label}</span>
-              <span className="h-5 rounded bg-blue-100">
-                <span className="block h-5 rounded bg-blue-500" style={{ width: `${(value / max) * 100}%` }} />
-              </span>
-              <span className="text-right tabular-nums">{value}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function renderPanel(engine: CoreEngineAPI, props: PanelRenderProps) {
-  if (props.loading) return <div className="p-3 text-xs text-gray-500">Loading</div>
-  if (props.error) return <div className="p-3 text-xs text-red-600">{props.error}</div>
-  if (props.panelType === 'bar') return <BarPanel engine={engine} props={props} />
-
-  const rows = Array.isArray(props.data) ? props.data as unknown[][] : []
-  return (
-    <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-3 py-2 text-sm font-semibold">{props.config.title}</div>
-      <table className="w-full text-left text-xs">
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index} className="border-b border-gray-100">
-              {row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2">{String(cell)}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
+  const Viewer = engine.getPanelPlugin(props.panelType)?.viewer as ((props: PanelViewerProps<unknown, unknown>) => React.ReactNode) | undefined
+  if (Viewer) {
+    return <Viewer data={props.data} loading={props.loading} error={props.error} options={props.options} panel={props.config} variables={{}} width={0} height={0} rawData={props.rawData} />
+  }
+  return <div className="p-3 text-xs text-gray-400">Unknown panel: {props.panelType}</div>
 }
 
 export function SupersetStyleTab() {
@@ -204,6 +216,7 @@ export function SupersetStyleTab() {
   useConfigChanged(engine, () => setDirty(true))
 
   return (
+    <SupersetEngineCtx.Provider value={engine}>
     <div>
       <div className="mb-4">
         <h2 className="text-base font-semibold">Explore cross-filter</h2>
@@ -232,6 +245,7 @@ export function SupersetStyleTab() {
         <SupersetPanelEditor engine={engine} panelId={selectedPanelId} onClose={() => setSelectedPanelId(null)} />
       </div>
     </div>
+    </SupersetEngineCtx.Provider>
   )
 }
 

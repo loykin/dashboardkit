@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createDashboardEngine,
   createEditorAddon,
@@ -15,7 +15,7 @@ import {
   useVariable,
 } from '@loykin/dashboardkit/react'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
-import type { CoreEngineAPI, DashboardInput, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, PanelViewerProps, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 type DashboardKey = 'ops' | 'billing'
@@ -29,6 +29,23 @@ const tablePanel = definePanel({
   transform(results: QueryResult[]) {
     return results[0] ? queryResultToTableRows(results[0]).rows : []
   },
+  viewer({ data, panel }: PanelViewerProps<Record<string, unknown>, unknown[][] | null>) {
+    const rows = Array.isArray(data) ? data as unknown[][] : []
+    return (
+      <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-3 py-2 text-sm font-semibold">{panel.title}</div>
+        <table className="w-full text-left text-xs">
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index} className="border-b border-gray-100">
+                {row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2" title={String(cell)}>{String(cell)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  },
 })
 
 const statPanel = definePanel({
@@ -39,6 +56,14 @@ const statPanel = definePanel({
   },
   transform(results: QueryResult[]) {
     return results[0] ? queryResultToTableRows(results[0]).rows.at(-1)?.[1] ?? null : null
+  },
+  viewer({ data, panel }: PanelViewerProps<Record<string, unknown>, number | null>) {
+    return (
+      <div className="flex h-full flex-col justify-between rounded border border-gray-200 bg-white p-4">
+        <div className="text-xs uppercase text-gray-500">{panel.title}</div>
+        <div className="text-4xl font-semibold">{String(data ?? '-')}</div>
+      </div>
+    )
   },
 })
 
@@ -362,7 +387,7 @@ export function NavigationLifecycleTab() {
               className={`h-full cursor-pointer ${selectedPanelId === props.instance.originId ? 'ring-2 ring-blue-500' : ''}`}
               onClick={() => setSelectedPanelId(props.instance.originId)}
             >
-              {renderPanel(props)}
+              {renderPanel(engine, props)}
             </div>
           )}
         </DashboardGrid>
@@ -426,32 +451,12 @@ function ConfigSummary({ config }: { config: ReturnType<CoreEngineAPI['getConfig
   )
 }
 
-function renderPanel(props: PanelRenderProps) {
-  if (props.loading) return <div className="p-3 text-xs text-gray-500">Loading</div>
-  if (props.error) return <div className="p-3 text-xs text-red-600">{props.error}</div>
-  if (props.panelType === 'stat') {
-    return (
-      <div className="flex h-full flex-col justify-between rounded border border-gray-200 bg-white p-4">
-        <div className="text-xs uppercase text-gray-500">{props.config.title}</div>
-        <div className="text-4xl font-semibold">{String(props.data ?? '-')}</div>
-      </div>
-    )
+function renderPanel(engine: CoreEngineAPI, props: PanelRenderProps) {
+  const Viewer = engine.getPanelPlugin(props.panelType)?.viewer as ((props: PanelViewerProps<unknown, unknown>) => React.ReactNode) | undefined
+  if (Viewer) {
+    return <Viewer data={props.data} loading={props.loading} error={props.error} options={props.options} panel={props.config} variables={{}} width={0} height={0} rawData={props.rawData} />
   }
-  const rows = Array.isArray(props.data) ? props.data as unknown[][] : []
-  return (
-    <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-3 py-2 text-sm font-semibold">{props.config.title}</div>
-      <table className="w-full text-left text-xs">
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index} className="border-b border-gray-100">
-              {row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2" title={String(cell)}>{String(cell)}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
+  return <div className="p-3 text-xs text-gray-400">Unknown panel: {props.panelType}</div>
 }
 
 function LifecycleEditor({ engine, panelId }: { engine: CoreEngineAPI; panelId: string | null }) {

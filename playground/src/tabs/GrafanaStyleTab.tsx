@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   createDashboardEngine,
   createEditorAddon,
@@ -9,7 +9,7 @@ import {
 } from '@loykin/dashboardkit'
 import { DashboardGrid, useConfigChanged, useLoadDashboard, usePanelDraftEditor, useVariable } from '@loykin/dashboardkit/react'
 import { defineDatasource, type DashboardDatasourceQueryContext } from '@/lib/datasource-adapter'
-import type { CoreEngineAPI, DashboardInput, DashboardStateStore, QueryResult } from '@loykin/dashboardkit'
+import type { CoreEngineAPI, DashboardInput, DashboardStateStore, PanelViewerProps, QueryResult } from '@loykin/dashboardkit'
 import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 
 interface SeriesRow {
@@ -28,6 +28,24 @@ const tablePanel = definePanel({
   transform(results: QueryResult[]) {
     return results.flatMap((result) => queryResultToTableRows(result).rows) as unknown[][]
   },
+  viewer({ data }: PanelViewerProps<Record<string, unknown>, unknown[][] | null>) {
+    const rows = Array.isArray(data) ? data as unknown[][] : []
+    return (
+      <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
+        <table className="w-full text-left text-xs">
+          <tbody>
+            {rows.slice(0, 6).map((row, index) => (
+              <tr key={index} className="border-b border-gray-100">
+                <td className="px-3 py-2 text-gray-500">{String(row[0])}</td>
+                <td className="px-3 py-2 font-medium">{String(row[1])}</td>
+                <td className="px-3 py-2 text-gray-500">{String(row[2] ?? '')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  },
 })
 
 const statPanel = definePanel({
@@ -41,9 +59,28 @@ const statPanel = definePanel({
     const latest = rows.at(-1)?.[1]
     return typeof latest === 'number' ? latest : null
   },
+  viewer({ data, panel }: PanelViewerProps<Record<string, unknown>, number | null>) {
+    return (
+      <div className="flex h-full flex-col justify-between rounded border border-gray-200 bg-white p-4">
+        <div className="text-xs font-medium uppercase text-gray-500">{panel.title}</div>
+        <div className="text-4xl font-semibold">{String(data ?? '-')}</div>
+      </div>
+    )
+  },
 })
 
-const rowPanel = definePanel({ id: 'row', name: 'Row', optionsSchema: {} })
+const rowPanel = definePanel({
+  id: 'row',
+  name: 'Row',
+  optionsSchema: {},
+  viewer({ panel }: PanelViewerProps<Record<string, unknown>, null>) {
+    return (
+      <div className="flex h-full w-full items-center justify-between rounded border border-gray-300 bg-gray-100 px-3 text-left text-sm font-semibold">
+        {panel.title}
+      </div>
+    )
+  },
+})
 
 const optionVariable = defineVariableType({
   id: 'options',
@@ -187,44 +224,12 @@ function Toolbar({ engine, stateStore }: { engine: CoreEngineAPI; stateStore: Da
   )
 }
 
-function renderPanel(props: PanelRenderProps) {
-  if (props.instance.isRow) {
-    return (
-      <div className="flex h-full w-full items-center justify-between rounded border border-gray-300 bg-gray-100 px-3 text-left text-sm font-semibold">
-        {props.config.title}
-      </div>
-    )
+function renderPanel(engine: CoreEngineAPI, props: PanelRenderProps) {
+  const Viewer = engine.getPanelPlugin(props.panelType)?.viewer as ((props: PanelViewerProps<unknown, unknown>) => React.ReactNode) | undefined
+  if (Viewer) {
+    return <Viewer data={props.data} loading={props.loading} error={props.error} options={props.options} panel={props.config} variables={{}} width={0} height={0} rawData={props.rawData} />
   }
-
-  if (props.loading) return <div className="p-3 text-xs text-gray-500">Loading</div>
-  if (props.error) return <div className="p-3 text-xs text-red-600">{props.error}</div>
-
-  if (props.panelType === 'stat') {
-    return (
-      <div className="flex h-full flex-col justify-between rounded border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase text-gray-500">{props.config.title}</div>
-        <div className="text-4xl font-semibold">{String(props.data ?? '-')}</div>
-      </div>
-    )
-  }
-
-  const rows = Array.isArray(props.data) ? props.data : []
-  return (
-    <div className="h-full overflow-hidden rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-3 py-2 text-sm font-semibold">{props.config.title}</div>
-      <table className="w-full text-left text-xs">
-        <tbody>
-          {rows.slice(0, 6).map((row, index) => (
-            <tr key={index} className="border-b border-gray-100">
-              <td className="px-3 py-2 text-gray-500">{String(row[0])}</td>
-              <td className="px-3 py-2 font-medium">{String(row[1])}</td>
-              <td className="px-3 py-2 text-gray-500">{String(row[2])}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
+  return <div className="p-3 text-xs text-gray-400">Unknown panel: {props.panelType}</div>
 }
 
 export function GrafanaStyleTab() {
@@ -270,7 +275,7 @@ export function GrafanaStyleTab() {
               className={`h-full cursor-pointer ${selectedPanelId === props.instance.originId ? 'ring-2 ring-blue-500' : ''}`}
               onClick={() => setSelectedPanelId(props.instance.originId)}
             >
-              {renderPanel(props)}
+              {renderPanel(engine, props)}
             </div>
           )}
         </DashboardGrid>

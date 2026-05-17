@@ -1,6 +1,6 @@
 import './dashboard.css'
 import 'react-grid-layout/css/styles.css'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useNavigate, useParams } from 'react-router-dom'
 import {
   builtinVariableTypes,
@@ -14,7 +14,6 @@ import {
   useConfigChanged,
   useEngineEvent,
   useLoadDashboard,
-  usePanel,
   useVariable,
 } from '@loykin/dashboardkit/react'
 import type {
@@ -23,9 +22,11 @@ import type {
   DashboardStateStore,
   OptionField,
   PanelInput,
+  PanelPluginDef,
+  PanelViewerProps,
+  PluginComponent,
   VariableInput,
 } from '@loykin/dashboardkit'
-import type { PanelRenderProps } from '@loykin/dashboardkit/react'
 import { createDatasourceAdapter, type DatasourceAdapterDef } from '@/lib/datasource-adapter'
 import { barPanel, salesDs, statPanel, tablePanel, PANEL_TYPES } from './data'
 import type { SalesOptions } from './data'
@@ -122,27 +123,17 @@ function PanelLoadingOverlay({ loading }: { loading: boolean }) {
   )
 }
 
-function StatContent({ panelId, engine }: { panelId: string; engine: CoreEngineAPI }) {
-  const { data, loading, error } = usePanel<unknown[] | null>(engine, panelId)
-  if (error)             return <div className="panel-error">{error}</div>
-  if (!data && loading)  return <div className="panel-loading">Loading…</div>
-  if (!data)             return <div className="panel-loading">No data</div>
-  return (
-    <div style={{ position: 'relative', padding: '12px 14px' }}>
-      <PanelLoadingOverlay loading={loading} />
-      <StatPreview row={data} />
-    </div>
-  )
-}
-
-function BarContent({ panelId, engine, dimension }: { panelId: string; engine: CoreEngineAPI; dimension?: string }) {
+// Cross-filter-aware bar viewer — uses AppContext to access engine
+function BarViewer({ data, loading, error, panel }: PanelViewerProps<Record<string, unknown>, unknown[][]>) {
+  const { engine } = useApp()
   const cf = useMemo(() => createCrossFilterAddon(engine), [engine])
-  const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
+  const panelId = panel.id
+  const dimension = PANEL_DIMENSION[panelId] as string | undefined
   const [scopes, setScopes] = useState(() => cf.getPanelSelections())
   useEngineEvent(engine, (e) => { if (e.type === 'panel-selection-changed') setScopes(cf.getPanelSelections()) })
   if (error)            return <div className="panel-error">{error}</div>
   if (!data && loading) return <div className="panel-loading">Loading…</div>
-  const rows = Array.isArray(data) ? data : []
+  const rows = Array.isArray(data) ? data as unknown[][] : []
   const max  = Math.max(1, ...rows.map((r) => Number(r[1] ?? 0)))
   const activeScope = dimension ? Object.values(scopes).find((s) => dimension in s) : undefined
   const activeVal   = activeScope ? String(activeScope[dimension!]) : null
@@ -171,38 +162,10 @@ function BarContent({ panelId, engine, dimension }: { panelId: string; engine: C
   )
 }
 
-function TableContent({ panelId, engine }: { panelId: string; engine: CoreEngineAPI }) {
-  const { data, loading, error } = usePanel<unknown[][]>(engine, panelId)
-  if (error)            return <div className="panel-error">{error}</div>
-  if (!data && loading) return <div className="panel-loading">Loading…</div>
-  const rows = Array.isArray(data) ? data : []
-  if (rows.length === 0) return <div className="panel-loading">No data</div>
-  const headers = rows[0]?.length === 4
-    ? ['Country', 'Platform', 'Quarter', 'Revenue']
-    : ['Dimension', 'Value']
-  return (
-    <div style={{ position: 'relative', overflowY: 'auto', height: '100%' }}>
-      <PanelLoadingOverlay loading={loading} />
-      <table className="ex-table">
-        <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              {row.map((cell, j) => <td key={j}>{j === 3 ? Number(cell).toLocaleString() : String(cell)}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function PanelContent({ props, engine }: { props: PanelRenderProps; engine: CoreEngineAPI }) {
-  const dim = PANEL_DIMENSION[props.instance.originId ?? '']
-  if (props.panelType === 'stat')  return <StatContent  panelId={props.panelId} engine={engine} />
-  if (props.panelType === 'bar')   return <BarContent   panelId={props.panelId} engine={engine} dimension={dim} />
-  if (props.panelType === 'table') return <TableContent panelId={props.panelId} engine={engine} />
-  return <div className="panel-loading">Unknown type: {props.panelType}</div>
+// Local barPanel override with cross-filter-aware viewer
+const barPanelWithCF: PanelPluginDef = {
+  ...barPanel,
+  viewer: BarViewer as PluginComponent<PanelViewerProps<Record<string, unknown>, unknown>>,
 }
 
 // ── Cross-filter chips ─────────────────────────────────────────────────────────
@@ -385,6 +348,7 @@ function DashboardPage() {
           <DashboardGrid engine={engine} editable>
             {(props) => {
               const originId = props.instance.originId ?? props.instance.id
+              const Viewer = engine.getPanelPlugin(props.panelType)?.viewer as ((props: PanelViewerProps<unknown, unknown>) => React.ReactNode) | undefined
               return (
                 <div className="panel">
                   <div className="panel-header" onDoubleClick={() => nav(`/dashboard/${dash}/panels/${originId}/edit`)}>
@@ -392,7 +356,9 @@ function DashboardPage() {
                     <button className="panel-edit-btn" onClick={() => nav(`/dashboard/${dash}/panels/${originId}/edit`)}>Edit</button>
                   </div>
                   <div className="panel-body" style={{ padding: 0, overflow: 'hidden' }}>
-                    <PanelContent props={props} engine={engine} />
+                    {Viewer
+                      ? <Viewer data={props.data} loading={props.loading} error={props.error} options={props.options} panel={props.config} variables={{}} width={0} height={0} rawData={props.rawData} />
+                      : <div className="panel-loading">Unknown type: {props.panelType}</div>}
                   </div>
                 </div>
               )
@@ -931,7 +897,7 @@ export function DashboardAppProvider() {
       .map((r) => { const p = DS_PLUGIN_TYPES[r.type]; return p ? ({ ...p, uid: r.uid, options: r.options } as DatasourceAdapterDef) : null })
       .filter((p): p is DatasourceAdapterDef => p !== null)
     const e = createDashboardEngine({
-      panels: [statPanel, barPanel, tablePanel],
+      panels: [statPanel, barPanelWithCF, tablePanel],
       datasourceAdapter: createDatasourceAdapter(plugins),
       variableTypes: builtinVariableTypes,
       stateStore,
