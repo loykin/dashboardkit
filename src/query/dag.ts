@@ -1,4 +1,5 @@
-import { parseRefs } from './parser'
+import { defaultTemplateAdapter } from './parser'
+import type { TemplateAdapter } from './parser'
 
 // ─── DAG Types ──────────────────────────────────────────────────────────────────
 
@@ -19,13 +20,15 @@ export class CircularDependencyError extends Error {
  */
 export function buildVariableDAG(
   variables: Array<{ name: string; query?: string }>,
+  options: { templateAdapter?: Pick<TemplateAdapter, 'parseRefs'> } = {},
 ): string[] {
+  const templateAdapter = options.templateAdapter ?? defaultTemplateAdapter
   // Adjacency list: name → variables this one depends on
   const deps = new Map<string, Set<string>>()
   const allNames = new Set(variables.map((v) => v.name))
 
   for (const v of variables) {
-    const refs = v.query ? parseRefs(v.query).refs : []
+    const refs = v.query ? templateAdapter.parseRefs(v.query).refs : []
     // Only add edges for references to other known variables (excluding self-references)
     deps.set(v.name, new Set(refs.filter((r) => r !== v.name && allNames.has(r))))
   }

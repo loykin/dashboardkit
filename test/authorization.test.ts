@@ -105,7 +105,7 @@ test('viewer datasource query sends structured datasource request', async () => 
   assert.equal(lastOptions?.authContext?.subject?.id, 'viewer-1')
 })
 
-test('denied datasource query does not call the datasource plugin', async () => {
+test('denied datasource query does not call the datasource adapter', async () => {
   let queryCalls = 0
   const datasource = defineDatasource({
     uid: 'backend',
@@ -135,7 +135,7 @@ test('denied datasource query does not call the datasource plugin', async () => 
   assert.equal(engine.getPanel('sales-table')?.error, 'blocked role cannot query datasource')
 })
 
-test('denied previewPanel datasource query does not call the datasource plugin', async () => {
+test('denied previewPanel datasource query does not call the datasource adapter', async () => {
   let queryCalls = 0
   const datasource = defineDatasource({
     uid: 'backend',
@@ -181,7 +181,7 @@ test('denied previewPanel datasource query does not call the datasource plugin',
   assert.equal(queryCalls, 0)
 })
 
-test('datasource plugin type must match data request type', async () => {
+test('datasource adapter type must match data request type', async () => {
   let queryCalls = 0
   const datasource = defineDatasource({
     uid: 'backend',

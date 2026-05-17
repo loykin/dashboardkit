@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand/vanilla'
 import { createStore } from 'zustand/vanilla'
-import { buildVariableDAG, parseRefs } from '../query'
+import { buildVariableDAG, defaultTemplateAdapter } from '../query'
+import type { TemplateAdapter } from '../query'
 import type {
   AuthContext,
   DashboardConfig,
@@ -30,6 +31,7 @@ export interface VariableEngineOptions {
     vcfg: VariableConfig,
     request: DataRequestConfig,
   ) => Promise<void>
+  templateAdapter?: Pick<TemplateAdapter, 'parseRefs'>
 }
 
 export interface VariableEngine {
@@ -61,11 +63,14 @@ function valuesEqual(
   return a === b
 }
 
-function requestRefs(request: DataRequestConfig | undefined): string[] {
+function requestRefs(
+  request: DataRequestConfig | undefined,
+  templateAdapter: Pick<TemplateAdapter, 'parseRefs'>,
+): string[] {
   if (!request) return []
   const queryText = request.query !== undefined ? JSON.stringify(request.query) : '{}'
   const optionsText = request.options !== undefined ? JSON.stringify(request.options) : '{}'
-  return [...new Set([...parseRefs(queryText).refs, ...parseRefs(optionsText).refs])]
+  return [...new Set([...templateAdapter.parseRefs(queryText).refs, ...templateAdapter.parseRefs(optionsText).refs])]
 }
 
 function requestRefText(request: DataRequestConfig): string {
@@ -127,6 +132,7 @@ export function chooseVariableValue(
 export function createVariableEngine(options: VariableEngineOptions): VariableEngine {
   const vtMap = new Map(options.variableTypes.map((v) => [v.id, v]))
   const datasourceAdapter = options.datasourceAdapter ?? createMissingDashboardDatasourceAdapter()
+  const templateAdapter = options.templateAdapter ?? defaultTemplateAdapter
 
   let sortedVarNames: string[] = []
   let variableConfigs: VariableConfig[] = []
@@ -285,6 +291,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
           name: v.name,
           ...(v.dataRequest ? { query: requestRefText(v.dataRequest) } : {}),
         })),
+        { templateAdapter },
       )
 
       const snapshot = options.stateStore.getSnapshot()
@@ -329,7 +336,7 @@ export function createVariableEngine(options: VariableEngineOptions): VariableEn
         for (const name of sortedVarNames.slice(currentIndex + 1)) {
           if (visited.has(name)) continue
           const vcfg = variableConfigs.find((v) => v.name === name)
-          if (!requestRefs(vcfg?.dataRequest).includes(current)) continue
+          if (!requestRefs(vcfg?.dataRequest, templateAdapter).includes(current)) continue
 
           visited.add(name)
           const didChange = await resolveOne(name)

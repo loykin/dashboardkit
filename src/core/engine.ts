@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
-import { parseRefs } from '../query'
+import { defaultTemplateAdapter } from '../query'
 import type {
   Annotation,
   DashboardConfig,
@@ -86,9 +86,11 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
     panelExpanders: customPanelExpanders = [],
     stateStore = createMemoryDashboardStateStore(),
     authContext = {},
+    templateAdapter: configuredTemplateAdapter,
     authorize: customAuthorize,
   } = options
 
+  const templateAdapter = configuredTemplateAdapter ?? defaultTemplateAdapter
   const datasourceAdapter: DashboardDatasourceAdapter =
     configuredDatasourceAdapter ?? createMissingDashboardDatasourceAdapter()
   const panelMap = new Map<string, PanelPluginDef>(panelDefs.map((p) => [p.id, p]))
@@ -141,6 +143,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   const varEngine = createVariableEngine({
     variableTypes: vtDefs,
     datasourceAdapter,
+    templateAdapter,
     stateStore,
     getAuthContext: () => store.getState().authContext,
     getDashboardConfig: () => store.getState().config,
@@ -297,17 +300,17 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   function collectPanelRefs(panel: PanelConfig): Set<string> {
     const refs = new Set<string>()
     if (panel.title) {
-      for (const ref of parseRefs(panel.title).refs) refs.add(ref)
+      for (const ref of templateAdapter.parseRefs(panel.title).refs) refs.add(ref)
     }
     if (panel.repeat) refs.add(panel.repeat)
     for (const request of panel.dataRequests) {
       const queryText = request.query !== undefined ? JSON.stringify(request.query) : '{}'
       const optionsText = request.options !== undefined ? JSON.stringify(request.options) : '{}'
-      for (const ref of parseRefs(queryText).refs) refs.add(ref)
-      for (const ref of parseRefs(optionsText).refs) refs.add(ref)
+      for (const ref of templateAdapter.parseRefs(queryText).refs) refs.add(ref)
+      for (const ref of templateAdapter.parseRefs(optionsText).refs) refs.add(ref)
     }
     const panelOptionsText = panel.options !== undefined ? JSON.stringify(panel.options) : '{}'
-    for (const ref of parseRefs(panelOptionsText).refs) refs.add(ref)
+    for (const ref of templateAdapter.parseRefs(panelOptionsText).refs) refs.add(ref)
     return refs
   }
 

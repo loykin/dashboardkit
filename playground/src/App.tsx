@@ -28,6 +28,7 @@ import { StreamingTab } from './tabs/StreamingTab'
 import { CacheTtlTab } from './tabs/CacheTtlTab'
 import { AnnotationsTab } from './tabs/AnnotationsTab'
 import { StaticDashboardTab } from './tabs/StaticDashboardTab'
+import { TemplateAdapterTab } from './tabs/TemplateAdapterTab'
 
 // ── Navigation tree ────────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ const NAV: NavGroup[] = [
     items: [
       { id: 'interpolate',          label: 'interpolate()',        path: '/playground/interpolate' },
       { id: 'parse-refs',           label: 'parseRefs()',          path: '/playground/parse-refs' },
+      { id: 'template-adapter',      label: 'Template Adapter',     path: '/playground/template-adapter' },
       { id: 'format',               label: 'Format Specifiers',    path: '/playground/format' },
       { id: 'builtins',             label: 'Built-ins',            path: '/playground/builtins' },
       { id: 'url-state',            label: 'URL State',            path: '/playground/url-state' },
@@ -179,6 +181,7 @@ export default function App() {
         <Route path="/playground/navigation-lifecycle" element={<NavigationLifecycleTab />} />
         <Route path="/playground/interpolate"          element={<InterpolateTab />} />
         <Route path="/playground/parse-refs"           element={<ParseRefsTab />} />
+        <Route path="/playground/template-adapter"     element={<TemplateAdapterTab />} />
         <Route path="/playground/format"               element={<FormatTab />} />
         <Route path="/playground/builtins"             element={<BuiltinsTab />} />
         <Route path="/playground/url-state"            element={<UrlStateTab />} />

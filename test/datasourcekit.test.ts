@@ -43,7 +43,7 @@ test('dashboard engine executeDataRequest can run without loading a dashboard', 
   assert.deepEqual(queryResultToTableRows(result).rows, [[2]])
 })
 
-test('dashboard engine can use a datasource adapter without datasource plugins', async () => {
+test('dashboard engine can use a datasource adapter without a registry', async () => {
   const calls: string[] = []
   const engine = createDashboardEngine({
     datasourceAdapter: {

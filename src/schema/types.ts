@@ -29,8 +29,8 @@ const QueryDescriptorSchema = z.union([
 ])
 
 // ─── Data Request ─────────────────────────────────────────────────────────────
-// A panel or variable can request data from one or more datasource plugins. Each
-// request keeps the plugin identity, query descriptor, and request-local options together.
+// A panel or variable can request data from one or more datasource targets. Each
+// request keeps the datasource identity, query descriptor, and request-local options together.
 export const DataRequestSchema = z
   .object({
     id: z.string().min(1).default('main'),

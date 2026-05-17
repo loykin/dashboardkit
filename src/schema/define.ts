@@ -8,6 +8,7 @@ import type {
   DatasourceValidationResult,
 } from '../datasources'
 import type { PanelPluginDef } from '../plugins'
+import type { TemplateAdapter } from '../query'
 import type {
   Annotation,
   AuthContext,
@@ -82,6 +83,7 @@ export interface CreateDashboardEngineOptions {
   panelExpanders?: PanelExpander[]
   stateStore?: DashboardStateStore
   authContext?: AuthContext
+  templateAdapter?: Pick<TemplateAdapter, 'parseRefs'>
   authorize?: (
     request: AuthorizationRequest,
   ) => boolean | AuthorizationDecision | Promise<boolean | AuthorizationDecision>

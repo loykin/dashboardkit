@@ -14,7 +14,7 @@ a database, manage datasource credentials, or dictate your UI design.
   dashboard config
 - **Config CRUD**: add/remove panels, add/update/remove variables, update
   dashboard metadata, then save with `getConfig()`
-- **Plugin model**: datasource, panel, and variable type plugins
+- **Plugin model**: datasource adapter plus panel, variable type, and transform plugins
 - **Optional structured requests**: panels can omit datasources entirely, or use
   `dataRequests[]` with datasource identity, query descriptor, request options,
   permissions, and hide state
@@ -26,7 +26,7 @@ a database, manage datasource credentials, or dictate your UI design.
   saved panel copies
 - **Panel query cache**: panel-scoped cache with targeted invalidation
 - **Authorization hook**: block panel, variable, and datasource queries before a
-  datasource plugin runs
+  datasource adapter runs
 - **Addon model**: cross-filter, panel editor helpers, and annotations are
   opt-in addons built on the public engine API
 - **React adapter**: `DashboardGrid`, hooks, and URL state adapter are optional
@@ -95,17 +95,21 @@ import {
   usePanel,
 } from '@loykin/dashboardkit/react'
 
-// 1. Define a datasource plugin
+// 1. Define a datasource adapter
 const myDatasource = defineDatasource({
   uid: 'main-api',
   type: 'backend',
-  async queryData(_request, {  query, variables, timeRange, datasourceOptions  }) {
+  async queryData(request, { variables, timeRange }) {
     const res = await fetch('/api/query', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query, variables, timeRange }),
+      body: JSON.stringify({ query: request.query, variables, timeRange }),
     })
-    return res.json()
+    const body = await res.json() as {
+      columns: { name: string; type?: string }[]
+      rows: unknown[][]
+    }
+    return tableRowsToQueryResult(body)
   },
 })
 
@@ -175,10 +179,12 @@ function TablePanel({ panelId }: { panelId: string }) {
 
 ### Variable dependency detection
 
-The engine scans panel `dataRequests[].options` (as JSON) for `$varname`
-references to build the dependency graph. A panel only re-queries when a
-variable it references changes. **There is no separate declaration** — putting
-`country: '$country'` anywhere in `options` is sufficient.
+The engine scans panel titles, repeat expressions, `dataRequests[].query`,
+`dataRequests[].options`, and panel `options` for `$varname` references to build
+the dependency graph. Variable query requests are scanned the same way. A panel
+only re-queries when a variable it references changes. **There is no separate
+declaration** — putting `country: '$country'` anywhere in the request or panel
+options is sufficient.
 
 ## Builder Flow
 
@@ -224,19 +230,24 @@ engine.load(saved, { statePolicy: 'preserve' }) // keeps variable selections
 | `'replace-dashboard-variables'` | Reset variable values from config defaults |
 | _(omitted)_ | Reset all input state |
 
-## Datasource Plugin
+## Datasource Adapter
 
-DashboardKit datasource plugins receive dashboard execution context because the
-engine is orchestrating panel queries. Use `@loykin/datasourcekit` directly for
-dashboard-independent alert, report, schema browser, query preview, or backend
-job execution.
+DashboardKit queries a single `DashboardDatasourceAdapter`. The
+`defineDatasource()` helper below is a small convenience for simple single
+datasource demos; larger apps can provide their own adapter that proxies to
+DatasourceKit, an API server, mocks, or any other execution layer.
+
+DashboardKit datasource adapters receive dashboard execution context because
+the engine is orchestrating panel queries. Use `@loykin/datasourcekit` directly
+for dashboard-independent alert, report, schema browser, query preview, or
+backend job execution.
 
 Datasources are optional. A dashboard can render static, derived, embedded, or
-app-owned panels without registering any datasource plugin as long as those
+app-owned panels without configuring any datasource adapter as long as those
 panels do not declare `dataRequests[]`.
 
 ```ts
-import { defineDatasource } from '@loykin/dashboardkit'
+import { defineDatasource, tableRowsToQueryResult } from '@loykin/dashboardkit'
 
 const datasource = defineDatasource<MyOptions, MyQuery>({
   uid: 'my-ds',
@@ -318,7 +329,9 @@ interface DashboardDatasourceQueryContext<TOptions> {
 }
 ```
 
-Return value must be `QueryResult`:
+Return value must be `QueryResult`. DashboardKit uses the same frame-oriented
+shape as DatasourceKit: each frame is a named table/series with typed fields and
+columnar values.
 
 ```ts
 interface QueryResult {
@@ -339,6 +352,10 @@ interface QueryResult {
   meta?: Record<string, unknown>
 }
 ```
+
+`tableRowsToQueryResult()` and `queryResultToTableRows()` are convenience
+helpers for panels or backends that still prefer row-oriented `{ columns, rows }`
+tables at their boundary.
 
 ## Panel Plugin
 
@@ -600,6 +617,7 @@ engine.healthCheckDatasource(datasourceUid, options?)
 engine.validateDatasourceQuery(datasourceUid, query, options?)
 engine.applyPanelTransforms(type, results)
 engine.invalidateCache(panelIds?)
+engine.queryAnnotations(timeRange?)
 
 // Lifecycle
 engine.abortAll()   // cancel in-flight requests (keep engine alive)
@@ -607,7 +625,6 @@ engine.destroy()    // cancel requests + clear listeners + unsubscribe store
 
 // Runtime registration (add plugins after creation)
 engine.registerPanel(def)
-engine.registerDatasource(def)
 engine.registerVariableType(def)
 engine.registerTransform(def)
 
@@ -646,13 +663,55 @@ const datasource = defineDatasource({
 })
 ```
 
-Built-in format specifiers: `csv`, `pipe`, `json`, `doublequote`, `singlequote`,
-`sqlstring`, `sqlin`, `glob`, `regex`, `lucene`, `percentencode`, `text`, `raw`.
+Built-in format specifiers: `csv`, `pipe`, `json`, `sqlstring`, `sqlin`,
+`glob`, `regex`, `queryparam`, `text`, `raw`.
 
 Syntax:
 - `$varname` — default format
 - `${varname:format}` — named format
 - `$__timeFilter(col)` — built-in function (if registered in `functions`)
+
+## Template Adapter
+
+DashboardKit uses `templateAdapter.parseRefs()` only for dependency detection.
+The default adapter understands `$country` and `${country:sqlstring}` syntax.
+If your app uses another template syntax, inject an adapter when creating the
+engine:
+
+```ts
+const engine = createDashboardEngine({
+  datasourceAdapter,
+  panels,
+  variableTypes: builtinVariableTypes,
+  templateAdapter: {
+    parseRefs(template) {
+      const refs = [...template.matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}/g)]
+        .map((m) => m[1])
+      return { refs: [...new Set(refs)], template }
+    },
+  },
+})
+```
+
+This connects custom syntax such as `{{country}}` to the variable dependency
+DAG, downstream variable refresh, and panel refresh. It does not change query
+rendering: datasources or application code still decide how to interpolate the
+actual query text before execution.
+
+## Transforms
+
+Panel plugins can call `applyTransforms()` directly, or use
+`engine.applyPanelTransforms(type, results)` to apply the transform list declared
+on a panel plugin. Built-ins include row filtering, grouping, sorting,
+calculated fields, renaming, merging, and `joinByField`.
+
+```ts
+import { applyTransforms } from '@loykin/dashboardkit'
+
+const joined = applyTransforms(results, [
+  { type: 'joinByField', field: 'host', mode: 'outer' },
+])
+```
 
 ## Authorization
 
@@ -726,6 +785,8 @@ Navigate using the sidebar. Key sections:
 - **Explore Cross-filter** — chart cross-filtering and preview/edit sync
 - **Builder Lifecycle** — config CRUD, save with `getConfig()`, reload
 - **interpolate()** — variable interpolation with custom formatters
+- **Template Adapter** — custom `{{var}}` dependency parsing
+- **Transforms** — transform pipeline including `joinByField`
 - **URL State** — URL-backed dashboard state store
 
 ## Development

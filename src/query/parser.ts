@@ -10,10 +10,17 @@ export interface TemplateToken {
   args?: string[] // function arguments (only for builtin-func tokens)
 }
 
-export interface ParseResult {
-  tokens: TemplateToken[] // list of found tokens (in order)
+export interface RefParseResult {
   refs: string[] // deduplicated variable names for DAG edge construction
   template: string // original template string
+}
+
+export interface TemplateAdapter {
+  parseRefs(template: string): RefParseResult
+}
+
+export interface ParseResult extends RefParseResult {
+  tokens: TemplateToken[] // list of found tokens (in order)
 }
 
 // ─── Regular Expressions (in priority order) ────────────────────────────────────
@@ -164,6 +171,10 @@ export function interpolateVariables(
   formatters: Record<string, VariableFormatter> = {},
 ): string {
   return interpolate(template, { variables, builtins, functions: {}, formatters })
+}
+
+export const defaultTemplateAdapter: TemplateAdapter = {
+  parseRefs,
 }
 
 // ─── Format Specifiers ──────────────────────────────────────────────────────────

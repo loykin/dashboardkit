@@ -83,7 +83,7 @@ const DASHBOARD: DashboardInput = {
       options: {
         label: 'Datasource calls',
         value: '0',
-        detail: 'This dashboard registers no datasource plugins.',
+        detail: 'This dashboard configures no datasource adapter.',
       },
     },
     {
