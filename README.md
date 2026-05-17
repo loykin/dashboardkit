@@ -283,8 +283,6 @@ interface DashboardDatasourceContext {
   dashboardId?: string
   panelId?: string
   requestId?: string
-  panel?: PanelConfig
-  panelOptions?: Record<string, unknown>
 }
 ```
 
