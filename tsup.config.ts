@@ -13,4 +13,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
+  onSuccess: 'cp src/styles.css dist/styles.css',
 })

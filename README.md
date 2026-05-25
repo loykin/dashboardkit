@@ -338,7 +338,7 @@ tables at their boundary.
 
 ```tsx
 import { definePanel, applyOptionDefaults, queryResultToTableRows } from '@loykin/dashboardkit'
-import type { PanelViewerProps } from '@loykin/dashboardkit/react'
+import type { PanelViewerProps } from '@loykin/dashboardkit'
 
 interface StatOptions { unit: string; threshold: number; color: string }
 
@@ -398,7 +398,7 @@ Built-in types:
 | `type` | Description |
 |---|---|
 | `query` | Calls `datasource.variable.metricFindQuery(query, ctx)` and populates options from the result |
-| `custom` | Comma-separated static values. `options.values = 'KR,US,JP'` |
+| `custom` | Static values. `options.values` accepts a comma-separated string (`'KR,US,JP'`) or a string array (`['KR', 'US', 'JP']`) |
 | `textbox` | Free-text input with `defaultValue` |
 | `constant` | Fixed hidden value |
 | `interval` | Time interval picker (`1m`, `5m`, `1h`, …) |

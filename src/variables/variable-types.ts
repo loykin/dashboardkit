@@ -1,19 +1,28 @@
 import { defineVariableType } from '../schema'
 import type { VariableOption } from '../schema'
 
-function valuesFromUnknown(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean)
+function valuesFromUnknown(value: unknown): VariableOption[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (!item) return []
+      if (typeof item === 'object' && 'value' in item) {
+        const v = String((item as Record<string, unknown>).value)
+        if (!v) return []
+        const label = 'label' in item ? String((item as Record<string, unknown>).label) : v
+        return [{ label, value: v }]
+      }
+      const s = String(item)
+      return s ? [{ label: s, value: s }] : []
+    })
+  }
   if (typeof value === 'string') {
     return value
       .split(',')
       .map((v) => v.trim())
       .filter(Boolean)
+      .map((v) => ({ label: v, value: v }))
   }
   return []
-}
-
-function option(value: string): VariableOption {
-  return { label: value, value }
 }
 
 export const constantVariableType = defineVariableType({
@@ -21,7 +30,7 @@ export const constantVariableType = defineVariableType({
   name: 'Constant',
   optionsSchema: {},
   async resolve(config) {
-    return valuesFromUnknown(config.defaultValue).map(option)
+    return valuesFromUnknown(config.defaultValue)
   },
 })
 
@@ -31,8 +40,7 @@ export const customVariableType = defineVariableType({
   optionsSchema: {},
   async resolve(config, options) {
     const record = options as Record<string, unknown>
-    const values = valuesFromUnknown(record['values'] ?? record['options'] ?? config.defaultValue)
-    return values.map(option)
+    return valuesFromUnknown(record['values'] ?? record['options'] ?? config.defaultValue)
   },
 })
 
@@ -41,7 +49,7 @@ export const textboxVariableType = defineVariableType({
   name: 'Textbox',
   optionsSchema: {},
   async resolve(config) {
-    return valuesFromUnknown(config.defaultValue).map(option)
+    return valuesFromUnknown(config.defaultValue)
   },
 })
 
@@ -52,8 +60,8 @@ export const intervalVariableType = defineVariableType({
   async resolve(config, options) {
     const record = options as Record<string, unknown>
     const values = valuesFromUnknown(record['values'] ?? config.defaultValue)
-    const intervals = values.length > 0 ? values : ['1m', '5m', '15m', '1h', '6h', '1d']
-    return intervals.map(option)
+    if (values.length > 0) return values
+    return ['1m', '5m', '15m', '1h', '6h', '1d'].map((v) => ({ label: v, value: v }))
   },
 })
 
@@ -97,8 +105,8 @@ export const refreshVariableType = defineVariableType({
   async resolve(config, options) {
     const record = options as Record<string, unknown>
     const values = valuesFromUnknown(record['values'] ?? config.defaultValue)
-    const intervals = values.length > 0 ? values : ['', '5s', '10s', '30s', '1m', '5m', '15m', '1h']
-    return intervals.map((v) => ({ label: v || 'Off', value: v }))
+    if (values.length > 0) return values
+    return ['', '5s', '10s', '30s', '1m', '5m', '15m', '1h'].map((v) => ({ label: v || 'Off', value: v }))
   },
 })
 

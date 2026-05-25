@@ -31,7 +31,8 @@
       "types": "./dist/addons.d.ts",
       "import": "./dist/addons.js",
       "require": "./dist/addons.cjs"
-    }
+    },
+    "./styles": "./dist/styles.css"
   },
   "files": [
     "dist"
