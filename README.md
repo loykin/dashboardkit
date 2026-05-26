@@ -54,8 +54,14 @@ separately.
 import { createDashboardEngine } from '@loykin/dashboardkit'
 import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
+import { builtinVariableTypes } from '@loykin/dashboardkit/variables'
+import { createCrossFilterAddon } from '@loykin/dashboardkit/addons'
 import '@loykin/dashboardkit/styles'
 ```
+
+The root entrypoint stays headless. React components and browser URL state live
+behind optional subpath entrypoints so non-React runtimes do not need those peer
+dependencies.
 
 ## Core Model
 
@@ -232,9 +238,8 @@ interface. The engine has no built-in notion of individual datasource plugins �
 you provide one object that implements the adapter, and the engine calls it for
 every panel query, variable query, and annotation query.
 
-This makes it straightforward to connect any execution layer: a direct fetch, a
-datasource manager package (such as a future `@loykin/datasourcekit`), a mock,
-or a proxy to a backend API.
+This makes it straightforward to connect any execution layer: a direct fetch,
+`@loykin/datasourcekit`, a mock, or a proxy to a backend API.
 
 Datasources are optional. A dashboard can render static, derived, embedded, or
 app-owned panels without configuring any datasource adapter as long as those
@@ -499,7 +504,7 @@ import { DashboardGrid } from '@loykin/dashboardkit/react'
 
 <DashboardGrid engine={engine} editable onLayoutChange={handleLayout}>
   {(props) => (
-    // props: { panelId, panelType, instance, config, options, data, loading, error, ref }
+    // props: { panelId, panelType, instance, config, options, data, loading, error, ref, viewportRef }
     <MyPanel {...props} />
   )}
 </DashboardGrid>
@@ -519,13 +524,57 @@ interface PanelRenderProps {
   instance: PanelRuntimeInstance  // runtime-expanded instance (may differ from origin for repeat panels)
   config: PanelConfig             // resolved panel config
   options: Record<string, unknown>
+  fieldConfig?: FieldConfig
   data: unknown                   // output of panel.transform(results)
   rawData: QueryResult[] | null
   loading: boolean
   error: string | null
   ref: React.RefCallback<HTMLElement>  // attach to panel root for viewport virtualization
+  viewportRef: React.RefCallback<HTMLElement>
+  measureRef: React.RefCallback<HTMLElement>
 }
 ```
+
+### Styling
+
+DashboardKit provides the grid positioning and resize handle CSS. Panel chrome,
+cards, typography, spacing, and theme tokens remain the host application's
+responsibility.
+
+Import the stylesheet once from your application root:
+
+```ts
+import '@loykin/dashboardkit/styles'
+```
+
+The stylesheet includes the required `react-grid-layout` positioning rules and a
+small resize handle mark. The resize handle can be themed with CSS variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `--dk-resize-handle-z-index` | `10` | Stacking order for resize handles |
+| `--dk-resize-handle-inset` | `3px` | Distance from the handle mark to the panel edge |
+| `--dk-resize-handle-mark-size` | `5px` | Width and height of the corner mark |
+| `--dk-resize-handle-mark-width` | `2px` | Stroke width of the corner mark |
+| `--dk-resize-handle-color` | `rgba(0, 0, 0, 0.4)` | Stroke color of the corner mark |
+| `--dk-resize-handle-mark-radius` | `3px` | Radius on the corner mark |
+
+Example theme override:
+
+```css
+.dashboard-shell {
+  --dk-resize-handle-color: rgba(0, 0, 0, 0.35);
+  --dk-resize-handle-mark-radius: 3px;
+}
+
+.dark .dashboard-shell {
+  --dk-resize-handle-color: rgba(255, 255, 255, 0.4);
+}
+```
+
+The stylesheet subpath also ships a TypeScript declaration, so
+`import '@loykin/dashboardkit/styles'` works with package exports aware bundlers
+and TypeScript configurations.
 
 ### Hooks
 
@@ -631,8 +680,8 @@ engine.subscribe(listener)     // → unsubscribe function
 ## Query Interpolation
 
 `interpolate()` is a standalone utility — it is not called automatically by the
-engine. Use it inside a datasource `queryData()` when you want template-style variable
-substitution.
+engine. Use it inside a datasource `query()` method when you want template-style
+variable substitution.
 
 ```ts
 import { interpolate } from '@loykin/dashboardkit'

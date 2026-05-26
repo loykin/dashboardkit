@@ -50,12 +50,13 @@
 .react-grid-item .react-resizable-handle::after {
   content: "";
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 5px;
-  height: 5px;
-  border-right: 2px solid rgba(0, 0, 0, 0.4);
-  border-bottom: 2px solid rgba(0, 0, 0, 0.4);
+  right: var(--dk-resize-handle-inset, 3px);
+  bottom: var(--dk-resize-handle-inset, 3px);
+  width: var(--dk-resize-handle-mark-size, 5px);
+  height: var(--dk-resize-handle-mark-size, 5px);
+  border-right: var(--dk-resize-handle-mark-width, 2px) solid var(--dk-resize-handle-color, rgba(0, 0, 0, 0.4));
+  border-bottom: var(--dk-resize-handle-mark-width, 2px) solid var(--dk-resize-handle-color, rgba(0, 0, 0, 0.4));
+  border-bottom-right-radius: var(--dk-resize-handle-mark-radius, 3px);
 }
 .react-resizable-hide > .react-resizable-handle {
   display: none;
