@@ -17,16 +17,16 @@ const FORMATS = [
 type Format = (typeof FORMATS)[number]
 
 const FORMAT_DESC: Record<Format, string> = {
-  csv: '단순 쉼표 구분 (기본)',
-  sqlstring: "SQL IN 절 — 'v1','v2'",
-  sqlin: "SQL IN(...) 괄호 포함 — ('v1','v2')",
-  json: 'JSON 배열 — ["v1","v2"]',
-  regex: '정규식 OR — v1|v2',
-  pipe: '파이프 구분 — v1|v2',
-  glob: 'Glob 패턴 — {v1,v2}',
-  raw: '이스케이프 없음',
-  text: 'label 값 그대로',
-  queryparam: 'URL 쿼리 파라미터',
+  csv: 'Simple comma-separated values (default)',
+  sqlstring: "SQL string list — 'v1','v2'",
+  sqlin: "SQL IN(...) list with parentheses — ('v1','v2')",
+  json: 'JSON array — ["v1","v2"]',
+  regex: 'Regex OR expression — v1|v2',
+  pipe: 'Pipe-separated values — v1|v2',
+  glob: 'Glob pattern — {v1,v2}',
+  raw: 'No escaping',
+  text: 'Use the label value as-is',
+  queryparam: 'URL query parameter',
 }
 
 function applyFormat(varName: string, value: string[], format: Format): string {
@@ -103,8 +103,8 @@ export function FormatTab() {
 
       {/* Single-value note */}
       <div className="rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
-        <strong className="text-gray-700">단일값 기본:</strong> 포맷 미지정 시 → raw.{' '}
-        <strong className="text-gray-700">다중값 기본:</strong> 포맷 미지정 시 → csv.
+        <strong className="text-gray-700">Single-value default:</strong> raw when no format is specified.{' '}
+        <strong className="text-gray-700">Multi-value default:</strong> csv when no format is specified.
       </div>
     </div>
   )

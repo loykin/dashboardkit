@@ -183,7 +183,7 @@ export function DagTab() {
                   ))}
                 </div>
                 <p className="text-[10px] text-gray-400 mt-3">
-                  의존 대상이 먼저 resolve됩니다. 이 순서로 variable refresh가 실행됩니다.
+                  Dependencies resolve first. Variable refresh runs in this order.
                 </p>
               </div>
             )}

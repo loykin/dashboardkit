@@ -4,14 +4,14 @@ import { ENGINE_BUILTIN_VARIABLES, buildBuiltinMap, calculateInterval } from '@l
 const POSTGRES_BUILTINS = [
   {
     name: 'timeFilter',
-    description: 'WHERE 절 시간 필터',
+    description: 'WHERE clause time filter',
     signature: '$__timeFilter(col)',
     example: (col: string, from: string, to: string) =>
       `${col} BETWEEN '${from}' AND '${to}'`,
   },
   {
     name: 'timeGroup',
-    description: 'GROUP BY 시간 버킷',
+    description: 'GROUP BY time bucket',
     signature: '$__timeGroup(col, interval)',
     example: (col: string, _from: string, _to: string, interval: string) => {
       const map: Record<string, string> = {
@@ -22,7 +22,7 @@ const POSTGRES_BUILTINS = [
   },
   {
     name: 'timeGroupAlias',
-    description: 'timeGroup + AS time 별칭',
+    description: 'timeGroup plus AS time alias',
     signature: '$__timeGroupAlias(col, interval)',
     example: (col: string, _from: string, _to: string, interval: string) => {
       const map: Record<string, string> = {
@@ -36,7 +36,7 @@ const POSTGRES_BUILTINS = [
 const CLICKHOUSE_BUILTINS = [
   {
     name: 'timeFilter',
-    description: 'ClickHouse 시간 필터 (epoch)',
+    description: 'ClickHouse time filter (epoch)',
     signature: '$__timeFilter(col)',
     example: (col: string, from: string, to: string) => {
       const f = Math.floor(new Date(from).getTime() / 1000)
@@ -124,7 +124,7 @@ export function BuiltinsTab() {
       <div>
         <h2 className="text-xs font-semibold text-gray-700 mb-2">
           Built-in Variables{' '}
-          <span className="text-gray-400 font-normal">($__ prefix, engine 자동 주입)</span>
+          <span className="text-gray-400 font-normal">($__ prefix, injected by the engine)</span>
         </h2>
         <div className="overflow-x-auto rounded border border-gray-200">
           <table className="w-full text-xs">
@@ -158,7 +158,7 @@ export function BuiltinsTab() {
         <h2 className="text-xs font-semibold text-gray-700 mb-2">
           Built-in Functions{' '}
           <span className="text-gray-400 font-normal">
-            (datasource 등록 — 현재: {datasource})
+            (registered by datasource, current: {datasource})
           </span>
         </h2>
         <div className="overflow-x-auto rounded border border-gray-200">
@@ -188,7 +188,7 @@ export function BuiltinsTab() {
           </table>
         </div>
         <p className="text-[10px] text-gray-400 mt-2">
-          실제 엔진에서는 <code className="font-mono">defineDatasource({'{ builtins: [...] }'})</code>로 등록한 함수가 여기에 표시됩니다.
+          In a real engine, functions registered with <code className="font-mono">defineDatasource({'{ builtins: [...] }'})</code> appear here.
         </p>
       </div>
     </div>

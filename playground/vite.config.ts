@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
-      // 소스에서 직접 임포트 — 빌드 없이 개발 가능
+      // Import directly from source for local development without a package build.
       '@loykin/dashboardkit/react': resolve(__dirname, '../src/react.ts'),
       '@loykin/dashboardkit/url-state': resolve(__dirname, '../src/adapters/url-state.ts'),
       '@loykin/dashboardkit/variables': resolve(__dirname, '../src/variables-entrypoint.ts'),

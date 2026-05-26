@@ -62,13 +62,13 @@ export function InterpolateTab() {
     functions: {
       timeFilter: {
         name: 'timeFilter',
-        description: 'WHERE 절 시간 필터',
+        description: 'WHERE clause time filter',
         call: ([col], bCtx) =>
           `${col} BETWEEN '${bCtx.timeRange.from}' AND '${bCtx.timeRange.to}'`,
       },
       timeGroup: {
         name: 'timeGroup',
-        description: 'GROUP BY 버킷',
+        description: 'GROUP BY bucket',
         call: ([col, interval]) => `date_trunc('${interval}', ${col})`,
       },
     },
@@ -137,7 +137,7 @@ export function InterpolateTab() {
               value={timeFilterSql}
               onChange={(e) => setTimeFilterSql(e.target.value)}
             />
-            <p className="text-[10px] text-gray-400 mt-1">:from / :to 는 builtins.fromISO / toISO 로 치환됨</p>
+            <p className="text-[10px] text-gray-400 mt-1">:from / :to are replaced with builtins.fromISO / toISO.</p>
           </div>
 
           <div className="rounded border border-dashed border-gray-300 p-3 space-y-2">
@@ -162,7 +162,7 @@ export function InterpolateTab() {
             </div>
             {customFormatErr && <p className="text-[10px] text-red-500">{customFormatErr}</p>}
             <p className="text-[10px] text-gray-400">
-              Template에서 <code className="bg-gray-100 px-1 rounded">{'${var:' + customFormatName + '}'}</code> 로 사용
+              Use it in templates as <code className="bg-gray-100 px-1 rounded">{'${var:' + customFormatName + '}'}</code>.
             </p>
           </div>
         </div>

@@ -1,11 +1,11 @@
 /**
  * datasourcekit ↔ dashboardkit bridge validation
  *
- * 이 테스트가 증명하는 것:
- * 1. datasourcekit은 dashboardkit을 전혀 import하지 않는다
- * 2. bridge는 얇다 — 컨텍스트 field 매핑 + format 변환만 한다
- * 3. 같은 executor를 dashboard 없이 standalone으로도 쓸 수 있다
- * 4. DashboardDatasourceAdapter 인터페이스가 외부 구현으로 충분히 채워진다
+ * This test verifies:
+ * 1. datasourcekit does not import dashboardkit.
+ * 2. the bridge is thin: context field mapping plus result format conversion.
+ * 3. the same executor can be reused standalone without a dashboard.
+ * 4. DashboardDatasourceAdapter can be implemented outside dashboardkit.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -17,8 +17,8 @@ import { createDashboardEngine, definePanel, tableRowsToQueryResult } from '@loy
 import type { DashboardDatasourceAdapter, DashboardDatasourceContext } from '@loykin/dashboardkit'
 
 // ─── bridge ────────────────────────────────────────────────────────────────────
-// DashboardDatasourceContext → DatasourceContext: dashboard 전용 필드는 버림
-// DatasourceResult → QueryResult: format 변환은 bridge 책임
+// DashboardDatasourceContext -> DatasourceContext: drop dashboard-specific fields.
+// DatasourceResult -> QueryResult: the bridge owns result format conversion.
 function toDashboardAdapter(executor: DatasourceExecutor): DashboardDatasourceAdapter {
   function toKitCtx(ctx: DashboardDatasourceContext): DatasourceContext {
     return {
@@ -153,7 +153,7 @@ test('datasourcekit: timeRange and variables flow through bridge, dashboard fiel
 
   assert.ok(capturedCtx, 'queryData should have been called')
   assert.equal(capturedCtx.timeRange?.from, '2026-01-01T00:00:00.000Z')
-  // dashboardId, panelId 같은 dashboard 전용 필드는 datasourcekit context에 없다
+  // Dashboard-specific fields like dashboardId and panelId are not part of the datasourcekit context.
   assert.equal('dashboardId' in capturedCtx, false)
   assert.equal('panelId' in capturedCtx, false)
   assert.equal('builtins' in capturedCtx, false)
@@ -190,7 +190,7 @@ test('datasourcekit: same executor reused standalone after dashboard query', asy
   })
   await new Promise<void>((r) => setTimeout(r, 50))
 
-  // 같은 executor를 dashboard 없이 standalone으로 재사용 (alert, report job 등)
+  // Reuse the same executor standalone without a dashboard, such as for alert or report jobs.
   const result = await kit.query(
     { uid: 'dual' },
     { variables: { source: 'alert-job' } },
