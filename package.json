@@ -32,14 +32,18 @@
       "import": "./dist/addons.js",
       "require": "./dist/addons.cjs"
     },
-    "./styles": "./dist/styles.css"
+    "./styles": {
+      "types": "./dist/styles.d.ts",
+      "default": "./dist/styles.css"
+    }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json --noEmit && eslint src --ext .ts,.tsx && tsup",
-    "build:js": "tsup",
+    "build": "tsc -p tsconfig.build.json --noEmit && eslint src --ext .ts,.tsx && tsup && pnpm build:styles",
+    "build:js": "tsup && pnpm build:styles",
+    "build:styles": "cp src/styles.css dist/styles.css && cp src/styles.d.ts dist/styles.d.ts",
     "dev": "concurrently \"tsup --watch\" \"pnpm --filter playground dev\"",
     "test": "pnpm type-check && pnpm build && node --experimental-strip-types --test test/*.test.ts",
     "type-check": "tsc -p tsconfig.json && tsc -p playground/tsconfig.json --noEmit",
