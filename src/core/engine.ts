@@ -35,7 +35,7 @@ import type {
   CoreEngineAPI,
   CreateDashboardEngineOptions,
 } from '../schema'
-import { createVariableEngine, defaultVariableValue } from '../variables'
+import { builtinVariableTypes, createVariableEngine, defaultVariableValue } from '../variables'
 import { createAuthorization } from './authorization'
 import { buildBasePanelInstances, buildPanelExpanders } from '../panels'
 import { createMissingDashboardDatasourceAdapter } from '../datasources'
@@ -82,7 +82,7 @@ export function createDashboardEngine(options: CreateDashboardEngineOptions = {}
   const {
     panels: panelDefs = [],
     datasourceAdapter: configuredDatasourceAdapter,
-    variableTypes: vtDefs = [],
+    variableTypes: vtDefs = builtinVariableTypes,
     panelExpanders: customPanelExpanders = [],
     stateStore = createMemoryDashboardStateStore(),
     authContext = {},

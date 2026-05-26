@@ -104,6 +104,37 @@ test('dashboard engine reports a clear error when datasource adapter is missing'
   )
 })
 
+test('dashboard engine registers built-in variable types by default', async () => {
+  const engine = createDashboardEngine()
+
+  engine.load({
+    schemaVersion: 1,
+    id: 'default-builtin-vars',
+    title: 'Default Builtin Vars',
+    variables: [
+      {
+        name: 'env',
+        type: 'custom',
+        options: {
+          values: [
+            { label: 'Production', value: 'production' },
+            { label: 'Staging', value: 'staging' },
+          ],
+        },
+      },
+    ],
+    panels: [],
+  })
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(engine.getVariable('env')?.value, 'production')
+  assert.deepEqual(engine.getVariable('env')?.options, [
+    { label: 'Production', value: 'production' },
+    { label: 'Staging', value: 'staging' },
+  ])
+})
+
 test('missing datasource adapter records query variable errors without throwing from load', async () => {
   const engine = createDashboardEngine({ variableTypes: builtinVariableTypes })
 

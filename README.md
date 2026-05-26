@@ -54,6 +54,7 @@ separately.
 import { createDashboardEngine } from '@loykin/dashboardkit'
 import { DashboardGrid, usePanel } from '@loykin/dashboardkit/react'
 import { createBrowserDashboardStateStore } from '@loykin/dashboardkit/url-state'
+import '@loykin/dashboardkit/styles'
 ```
 
 ## Core Model
@@ -381,15 +382,18 @@ Option schema field types: `string`, `number`, `boolean`, `select`,
 
 ## Variable Types
 
-Pass `builtinVariableTypes` to the engine to enable the built-in variable types.
-Without it, none of the types below will resolve.
+Built-in variable types are registered by default when `variableTypes` is omitted.
+Pass `variableTypes` only when you want to add custom types or intentionally
+replace the default registry.
+Pass `variableTypes: []` to disable all built-in variable types.
 
 ```ts
 import { createDashboardEngine, builtinVariableTypes } from '@loykin/dashboardkit'
 
-const engine = createDashboardEngine({
-  variableTypes: builtinVariableTypes,
-  // ...
+const engine = createDashboardEngine()
+
+const engineWithCustomTypes = createDashboardEngine({
+  variableTypes: [...builtinVariableTypes, myType],
 })
 ```
 
@@ -398,7 +402,7 @@ Built-in types:
 | `type` | Description |
 |---|---|
 | `query` | Calls `datasource.variable.metricFindQuery(query, ctx)` and populates options from the result |
-| `custom` | Static values. `options.values` accepts a comma-separated string (`'KR,US,JP'`) or a string array (`['KR', 'US', 'JP']`) |
+| `custom` | Static values. `options.values` accepts a comma-separated string (`'KR,US,JP'`), a string array (`['KR', 'US', 'JP']`), or `{ label, value }[]` |
 | `textbox` | Free-text input with `defaultValue` |
 | `constant` | Fixed hidden value |
 | `interval` | Time interval picker (`1m`, `5m`, `1h`, …) |
@@ -502,7 +506,9 @@ import { DashboardGrid } from '@loykin/dashboardkit/react'
 ```
 
 `DashboardGrid` measures its container width and drives the react-grid-layout
-underneath. Pass `editable` to enable drag and resize.
+underneath. Import `@loykin/dashboardkit/styles` once in your app to enable the
+required grid positioning and resize handle styles. Pass `editable` to enable
+drag and resize.
 
 `PanelRenderProps`:
 
