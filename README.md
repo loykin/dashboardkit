@@ -552,6 +552,7 @@ small resize handle mark. The resize handle can be themed with CSS variables:
 
 | Variable | Default | Description |
 |---|---|---|
+| `--dk-resize-handle-size` | `20px` | Width and height of the invisible resize hit area |
 | `--dk-resize-handle-z-index` | `10` | Stacking order for resize handles |
 | `--dk-resize-handle-inset` | `3px` | Distance from the handle mark to the panel edge |
 | `--dk-resize-handle-mark-size` | `5px` | Width and height of the corner mark |
@@ -564,6 +565,7 @@ Example theme override:
 ```css
 .dashboard-shell {
   --dk-resize-handle-color: rgba(0, 0, 0, 0.35);
+  --dk-resize-handle-inset: clamp(4px, calc(var(--radius, 0px) * 0.4), 12px);
   --dk-resize-handle-mark-radius: 3px;
 }
 
